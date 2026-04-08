@@ -12,6 +12,7 @@ type GameSceneRef = {
   seed: string;
   mapX: number;
   mapY: number;
+  isNearTable(): boolean;
 };
 
 export class UIScene extends Phaser.Scene {
@@ -90,7 +91,10 @@ export class UIScene extends Phaser.Scene {
 
     // ── InventoryUI (무기 HUD + V키 패널) ────────────────────
     const gs = this.scene.get('GameScene') as unknown as GameSceneRef;
-    this.inventoryUI = new InventoryUI(this, gs.inventory, gs.survival, gs.combat, gs.charStats);
+    this.inventoryUI = new InventoryUI(
+      this, gs.inventory, gs.survival, gs.combat, gs.charStats,
+      () => gs.isNearTable(),
+    );
 
     // V키: 인벤토리 토글
     this.input.keyboard!.on('keydown-V', () => this.inventoryUI.toggle());

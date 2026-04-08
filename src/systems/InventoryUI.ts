@@ -18,6 +18,8 @@ const STACK_LIMITS: Record<string, number> = {
   item_bow: 1,
   item_sword_wood: 1,
   item_sword_stone: 1,
+  item_fishing_rod: 1,
+  item_torch: 10,
 };
 const DEFAULT_STACK = 99;
 
@@ -34,14 +36,18 @@ const ITEM_NAMES: Record<string, string> = {
   item_bow:             '활',
   item_sword_wood:      '나무칼',
   item_sword_stone:     '석재칼',
+  item_fishing_rod:     '낚싯대',
+  item_torch:           '횃불',
 };
 
 const WEAPON_ITEM_IDS = new Set(['item_bow', 'item_sword_wood', 'item_sword_stone']);
 const FOOD_ITEM_IDS   = new Set(['item_cooked_meat', 'item_cooked_fish', 'item_raw_meat', 'item_fish']);
 
 const FOOD_RESTORE: Record<string, number> = {
-  item_cooked_meat: 45,
-  item_cooked_fish: 35,
+  item_fish:        15,
+  item_cooked_fish: 25,
+  item_raw_meat:    10,
+  item_cooked_meat: 35,
 };
 
 export class InventoryUI {
@@ -58,6 +64,7 @@ export class InventoryUI {
     private survival: SurvivalStats,
     private combat: CombatSystem,
     private charStats: CharacterStats,
+    private getNearTable: (() => boolean) | null = null,
   ) {
     const W = scene.scale.width;
     const H = scene.scale.height;
@@ -203,10 +210,13 @@ export class InventoryUI {
           if (isWeapon) {
             tooltip.textContent = isEquipped ? '클릭: 장착 해제' : '클릭: 장착';
           } else if (isFood) {
-            if (FOOD_RESTORE[key]) {
-              tooltip.textContent = `클릭: 먹기 (+${FOOD_RESTORE[key]} 포만감)`;
+            const restore = FOOD_RESTORE[key];
+            if (restore) {
+              const nearTable = this.getNearTable?.() ?? false;
+              const bonus = nearTable ? ` → ${Math.ceil(restore * 1.3)} (식탁+30%)` : '';
+              tooltip.textContent = `클릭: 먹기 (+${restore} 포만감${bonus})`;
             } else {
-              tooltip.textContent = '먼저 조리하세요';
+              tooltip.textContent = '먹을 수 없습니다';
             }
           } else {
             tooltip.textContent = ITEM_NAMES[key] ?? key;
@@ -238,15 +248,45 @@ export class InventoryUI {
   }
 
   private handleFoodClick(itemKey: string, tooltip: HTMLDivElement): void {
-    const restore = FOOD_RESTORE[itemKey];
-    if (!restore) {
-      tooltip.textContent = '먼저 조리하세요';
+    const baseRestore = FOOD_RESTORE[itemKey];
+    if (!baseRestore) {
+      tooltip.textContent = '먹을 수 없습니다';
       return;
     }
     if (!this.inventory.has(itemKey, 1)) return;
+
+    const nearTable = this.getNearTable?.() ?? false;
+    const restore = nearTable ? Math.ceil(baseRestore * 1.3) : baseRestore;
+
     this.inventory.remove(itemKey, 1);
     this.survival.eat(restore);
+
+    if (nearTable) this.showTableBonusPopup();
+
     if (this.panel) this.refreshPanel();
+  }
+
+  private showTableBonusPopup(): void {
+    const existing = document.getElementById('table-bonus-popup');
+    existing?.remove();
+
+    const popup = document.createElement('div');
+    popup.id = 'table-bonus-popup';
+    popup.style.cssText = `
+      position: fixed; bottom: 120px; left: 50%; transform: translateX(-50%);
+      color: #ffd700; font: 12px monospace; text-align: center;
+      background: rgba(0,0,0,0.6); padding: 4px 10px; border-radius: 4px;
+      z-index: 500; pointer-events: none; opacity: 1;
+      transition: opacity 1.5s ease;
+    `;
+    popup.textContent = '🍽 식탁에서 먹었습니다 (+30%)';
+    document.body.appendChild(popup);
+
+    // Fade out after 0.1s delay then 1.4s fade
+    setTimeout(() => {
+      popup.style.opacity = '0';
+      setTimeout(() => popup.remove(), 1500);
+    }, 100);
   }
 
   private weaponIdFromItem(itemKey: string): string | null {
@@ -269,6 +309,8 @@ export class InventoryUI {
       item_bow:             '🏹',
       item_sword_wood:      '🗡',
       item_sword_stone:     '⚔',
+      item_fishing_rod:     '🎣',
+      item_torch:           '🔥',
     };
     return map[key] ?? '📦';
   }

@@ -21,6 +21,7 @@ import { ShelfUI } from '../systems/ShelfUI';
 import { WeatherSystem } from '../systems/WeatherSystem';
 import { EffectSystem } from '../systems/EffectSystem';
 import { InvasionSystem } from '../systems/InvasionSystem';
+import { COOKING_RECIPES, CRAFTING_RECIPES, Recipe } from '../config/recipes';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -70,7 +71,15 @@ export class GameScene extends Phaser.Scene {
   private commandQueueUI!: CommandQueueUI;
 
   private workbenchPanel: HTMLDivElement | null = null;
+  private kitchenPanel: HTMLDivElement | null = null;
   private contextMenu: HTMLDivElement | null = null;
+
+  // 요리 진행 상태
+  private cookingRecipe: Recipe | null = null;
+  private cookingTimer: Phaser.Time.TimerEvent | null = null;
+  private cookingKitchenPos: { wx: number; wy: number } | null = null;
+  private cookingStartTime = 0;
+  private cookingDuration = 0;
 
   // Shelf storage
   private shelfStorages = new Map<string, ShelfStorage>();
@@ -279,7 +288,27 @@ export class GameScene extends Phaser.Scene {
         Math.floor(wx / TILE_SIZE), Math.floor(wy / TILE_SIZE),
       );
       if (clickedStructure?.defName === 'workbench') {
-        this.toggleWorkbenchPanel();
+        const wbX = clickedStructure.tileX * TILE_SIZE + TILE_SIZE / 2;
+        const wbY = clickedStructure.tileY * TILE_SIZE + TILE_SIZE / 2;
+        const wbDist = Math.hypot(this.player.sprite.x - wbX, this.player.sprite.y - wbY);
+        if (wbDist <= BUILD_RANGE) {
+          this.toggleWorkbenchPanel();
+        } else {
+          this.buildAutoMoveTarget = { worldX: wbX, worldY: wbY };
+          this.pendingBuild = { defName: '__open_workbench__', material: 'wood', tileX: clickedStructure.tileX, tileY: clickedStructure.tileY };
+        }
+        return;
+      }
+      if (clickedStructure?.defName === 'kitchen') {
+        const kX = clickedStructure.tileX * TILE_SIZE + TILE_SIZE / 2;
+        const kY = clickedStructure.tileY * TILE_SIZE + TILE_SIZE / 2;
+        const kDist = Math.hypot(this.player.sprite.x - kX, this.player.sprite.y - kY);
+        if (kDist <= BUILD_RANGE) {
+          this.toggleKitchenPanel(kX, kY);
+        } else {
+          this.buildAutoMoveTarget = { worldX: kX, worldY: kY };
+          this.pendingBuild = { defName: '__open_kitchen__', material: 'wood', tileX: clickedStructure.tileX, tileY: clickedStructure.tileY };
+        }
         return;
       }
       if (clickedStructure?.defName === 'shelf') {
@@ -376,6 +405,7 @@ export class GameScene extends Phaser.Scene {
       this.pendingBuild = null;
       this.closeBuildPanel();
       this.closeWorkbenchPanel();
+      this.closeKitchenPanel();
       this.closeContextMenu();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (this.scene.get('UIScene') as any)?.inventoryUI?.close();
@@ -397,6 +427,19 @@ export class GameScene extends Phaser.Scene {
     this.invasion.update(delta);
     this.shelfUI.updatePlayerPosition(this.player.sprite.x, this.player.sprite.y);
     this.buildSystem.update(delta, this.survival, this.player.sprite.x, this.player.sprite.y);
+
+    // 요리 중 거리 이탈 감지
+    if (this.cookingRecipe && this.cookingKitchenPos) {
+      const kDist = Math.hypot(
+        this.player.sprite.x - this.cookingKitchenPos.wx,
+        this.player.sprite.y - this.cookingKitchenPos.wy,
+      );
+      if (kDist > BUILD_RANGE) {
+        this.cancelCooking();
+      } else {
+        this.updateKitchenProgressBar();
+      }
+    }
 
     // Frenzy damages structures once per second
     if (this.survival.isFrenzy) {
@@ -469,6 +512,12 @@ export class GameScene extends Phaser.Scene {
           const { defName, material, tileX, tileY } = this.pendingBuild;
           if (defName === '__demolish__') {
             this.buildSystem.startDemolish(tileX, tileY, this.charStats, this.inventory);
+          } else if (defName === '__open_workbench__') {
+            this.openWorkbenchPanel();
+          } else if (defName === '__open_kitchen__') {
+            const kX = tileX * TILE_SIZE + TILE_SIZE / 2;
+            const kY = tileY * TILE_SIZE + TILE_SIZE / 2;
+            this.openKitchenPanel(kX, kY);
           } else {
             this.buildSystem.startBuild(defName, material, tileX, tileY, this.charStats, this.inventory);
           }
@@ -646,6 +695,7 @@ export class GameScene extends Phaser.Scene {
     this.animalMgr?.destroyAll();
     this.closeBuildPanel();
     this.closeWorkbenchPanel();
+    this.closeKitchenPanel();
     this.combat?.destroy();
     this.commandQueueUI?.destroy();
   }
@@ -957,16 +1007,17 @@ export class GameScene extends Phaser.Scene {
   // ── Workbench Panel ───────────────────────────────────────────────────────────
 
   private toggleWorkbenchPanel(): void {
-    if (this.workbenchPanel) { this.closeWorkbenchPanel(); return; }
-    this.openWorkbenchPanel();
+    this.openWorkbenchPanel(); // openWorkbenchPanel handles toggle logic
   }
 
   private openWorkbenchPanel(): void {
+    if (this.workbenchPanel) { this.closeWorkbenchPanel(); return; }
+
     const panel = document.createElement('div');
     panel.id = 'workbench-panel';
     panel.style.cssText = `
       position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%);
-      width: 300px; background: rgba(10,15,25,0.93);
+      width: 320px; background: rgba(10,15,25,0.93);
       border: 1px solid #664; border-radius: 6px; padding: 12px; z-index: 200;
       color: #eee; font: 12px monospace;
     `;
@@ -976,6 +1027,11 @@ export class GameScene extends Phaser.Scene {
         <span style="font-weight:bold;color:#e2b96f">🔨 작업대</span>
         <button id="wb-close" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:14px">✕</button>
       </div>
+      <div id="wb-tabs" style="display:flex;gap:4px;margin-bottom:8px;border-bottom:1px solid #334;padding-bottom:6px">
+        <button class="wb-tab" data-tab="weapon" style="flex:1;padding:4px;background:#2a3a2a;color:#aaffaa;border:1px solid #446644;border-radius:3px;cursor:pointer;font:10px monospace">무기</button>
+        <button class="wb-tab" data-tab="material" style="flex:1;padding:4px;background:#1a2030;color:#888;border:1px solid #334;border-radius:3px;cursor:pointer;font:10px monospace">재료</button>
+        <button class="wb-tab" data-tab="tool" style="flex:1;padding:4px;background:#1a2030;color:#888;border:1px solid #334;border-radius:3px;cursor:pointer;font:10px monospace">도구</button>
+      </div>
       <div id="wb-items" style="display:flex;flex-direction:column;gap:6px"></div>
       <div id="wb-status" style="font-size:10px;color:#88cc88;min-height:16px;margin-top:8px;text-align:center"></div>
     `;
@@ -984,69 +1040,327 @@ export class GameScene extends Phaser.Scene {
     this.workbenchPanel = panel;
 
     panel.querySelector('#wb-close')!.addEventListener('click', () => this.closeWorkbenchPanel());
-    this.refreshWorkbenchPanel(panel);
+
+    // Tab click
+    let activeTab = 'weapon';
+    panel.querySelectorAll('.wb-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        activeTab = (btn as HTMLElement).dataset.tab ?? 'weapon';
+        panel.querySelectorAll('.wb-tab').forEach(b => {
+          const el = b as HTMLButtonElement;
+          const isActive = el.dataset.tab === activeTab;
+          el.style.background = isActive ? '#2a3a2a' : '#1a2030';
+          el.style.color = isActive ? '#aaffaa' : '#888';
+          el.style.borderColor = isActive ? '#446644' : '#334';
+        });
+        this.refreshWorkbenchPanel(panel, activeTab);
+      });
+    });
+
+    this.refreshWorkbenchPanel(panel, activeTab);
   }
 
-  private refreshWorkbenchPanel(panel: HTMLDivElement): void {
+  private refreshWorkbenchPanel(panel: HTMLDivElement, activeTab = 'weapon'): void {
     const container = panel.querySelector('#wb-items') as HTMLDivElement;
     const status    = panel.querySelector('#wb-status') as HTMLDivElement;
     container.innerHTML = '';
 
-    const craftableWeapons = WEAPONS.filter(w => w.recipe.length > 0);
-
-    for (const weapon of craftableWeapons) {
-      const canCraft = weapon.recipe.every(r => this.inventory.has(r.itemId, r.amount));
-      const row = document.createElement('div');
-      row.style.cssText = `
-        display:flex; align-items:center; justify-content:space-between;
-        padding:6px 8px; background:${canCraft ? '#1a2a1a' : '#1a1a2a'};
-        border:1px solid ${canCraft ? '#446644' : '#334'}; border-radius:4px;
-      `;
-
-      const recipeStr = weapon.recipe
-        .map(r => `${r.itemId.replace('item_', '')}×${r.amount} (보유:${this.inventory.get(r.itemId)})`)
-        .join(', ');
-
-      row.innerHTML = `
-        <div>
-          <div style="color:${canCraft ? '#aaffaa' : '#888'};font-weight:bold">${weapon.name}</div>
-          <div style="font-size:9px;color:#777;margin-top:2px">${recipeStr}</div>
-        </div>
-      `;
-
-      const btn = document.createElement('button');
-      btn.textContent = '제작';
-      btn.style.cssText = `
-        padding:4px 10px; background:${canCraft ? '#2a5a2a' : '#333'};
-        color:${canCraft ? '#aaffaa' : '#666'}; border:1px solid ${canCraft ? '#446644' : '#444'};
-        border-radius:3px; cursor:${canCraft ? 'pointer' : 'default'}; font:11px monospace;
-      `;
-      btn.disabled = !canCraft;
-
-      if (canCraft) {
-        btn.addEventListener('click', () => {
-          // Deduct materials
-          for (const r of weapon.recipe) {
-            this.inventory.remove(r.itemId, r.amount);
-          }
-          const ms = this.charStats.buildTime(weapon.craftTimeSec);
-          status.textContent = `제작 중… (${(ms / 1000).toFixed(1)}s)`;
-          btn.disabled = true;
-          this.time.delayedCall(ms, () => {
-            this.inventory.add(`item_${weapon.id}`, 1);
-            status.textContent = `${weapon.name} 제작 완료!`;
-            this.refreshWorkbenchPanel(panel);
-          });
-        });
+    if (activeTab === 'weapon') {
+      const craftableWeapons = WEAPONS.filter(w => w.recipe.length > 0);
+      for (const weapon of craftableWeapons) {
+        const canCraft = weapon.recipe.every(r => this.inventory.has(r.itemId, r.amount));
+        const row = this.makeWorkbenchRow(
+          weapon.name,
+          weapon.recipe.map(r => `${r.itemId.replace('item_', '')}×${r.amount} (보유:${this.inventory.get(r.itemId)})`).join(', '),
+          canCraft,
+          () => {
+            for (const r of weapon.recipe) this.inventory.remove(r.itemId, r.amount);
+            const ms = this.charStats.buildTime(weapon.craftTimeSec);
+            status.textContent = `제작 중… (${(ms / 1000).toFixed(1)}s)`;
+            this.time.delayedCall(ms, () => {
+              this.inventory.add(`item_${weapon.id}`, 1);
+              this.survival.addAction(12);
+              status.textContent = `${weapon.name} 제작 완료!`;
+              this.refreshWorkbenchPanel(panel, activeTab);
+            });
+          },
+        );
+        container.appendChild(row);
       }
-
-      row.appendChild(btn);
-      container.appendChild(row);
+    } else {
+      const recipes = CRAFTING_RECIPES.filter(r => r.category === activeTab);
+      for (const recipe of recipes) {
+        const canCraft = recipe.inputs.every(i => this.inventory.has(i.itemId, i.amount));
+        const inputStr = recipe.inputs
+          .map(i => `${i.itemId.replace('item_', '')}×${i.amount} (보유:${this.inventory.get(i.itemId)})`)
+          .join(', ');
+        const ms = this.charStats.craftTime * recipe.timeMultiplier;
+        const row = this.makeWorkbenchRow(
+          recipe.label,
+          inputStr,
+          canCraft,
+          () => {
+            for (const i of recipe.inputs) this.inventory.remove(i.itemId, i.amount);
+            status.textContent = `제작 중… (${(ms / 1000).toFixed(1)}s)`;
+            this.time.delayedCall(ms, () => {
+              this.inventory.add(recipe.output.itemId, recipe.output.amount);
+              this.survival.addAction(12);
+              status.textContent = `${recipe.label} 제작 완료!`;
+              this.refreshWorkbenchPanel(panel, activeTab);
+            });
+          },
+        );
+        container.appendChild(row);
+      }
     }
+  }
+
+  private makeWorkbenchRow(
+    name: string,
+    recipeStr: string,
+    canCraft: boolean,
+    onCraft: () => void,
+  ): HTMLDivElement {
+    const row = document.createElement('div');
+    row.style.cssText = `
+      display:flex;align-items:center;justify-content:space-between;
+      padding:6px 8px;background:${canCraft ? '#1a2a1a' : '#1a1a2a'};
+      border:1px solid ${canCraft ? '#446644' : '#334'};border-radius:4px;
+    `;
+    row.innerHTML = `
+      <div>
+        <div style="color:${canCraft ? '#aaffaa' : '#888'};font-weight:bold">${name}</div>
+        <div style="font-size:9px;color:#777;margin-top:2px">${recipeStr}</div>
+      </div>
+    `;
+    const btn = document.createElement('button');
+    btn.textContent = '제작';
+    btn.disabled = !canCraft;
+    btn.style.cssText = `
+      padding:4px 10px;background:${canCraft ? '#2a5a2a' : '#333'};
+      color:${canCraft ? '#aaffaa' : '#666'};border:1px solid ${canCraft ? '#446644' : '#444'};
+      border-radius:3px;cursor:${canCraft ? 'pointer' : 'default'};font:11px monospace;
+    `;
+    if (canCraft) {
+      btn.addEventListener('click', () => {
+        btn.disabled = true;
+        onCraft();
+      });
+    }
+    row.appendChild(btn);
+    return row;
   }
 
   private closeWorkbenchPanel(): void {
     this.workbenchPanel?.remove();
     this.workbenchPanel = null;
+  }
+
+  // ── isNearTable ──────────────────────────────────────────────────────────────
+
+  isNearTable(): boolean {
+    const px = this.player.sprite.x;
+    const py = this.player.sprite.y;
+    for (const struct of this.buildSystem.getAllStructures()) {
+      if (struct.defName === 'table') {
+        const wx = struct.tileX * TILE_SIZE + TILE_SIZE / 2;
+        const wy = struct.tileY * TILE_SIZE + TILE_SIZE / 2;
+        if (Math.hypot(px - wx, py - wy) <= 48) return true;
+      }
+    }
+    return false;
+  }
+
+  // ── Kitchen Panel ─────────────────────────────────────────────────────────────
+
+  private toggleKitchenPanel(kitchenWx: number, kitchenWy: number): void {
+    if (this.kitchenPanel) { this.closeKitchenPanel(); return; }
+    this.openKitchenPanel(kitchenWx, kitchenWy);
+  }
+
+  private openKitchenPanel(kitchenWx: number, kitchenWy: number): void {
+    this.closeKitchenPanel();
+    this.cookingKitchenPos = { wx: kitchenWx, wy: kitchenWy };
+
+    const panel = document.createElement('div');
+    panel.id = 'kitchen-panel';
+    panel.style.cssText = `
+      position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%);
+      width: 320px; background: rgba(10,15,25,0.93);
+      border: 1px solid #664; border-radius: 6px; padding: 12px; z-index: 200;
+      color: #eee; font: 12px monospace;
+    `;
+
+    panel.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <span style="font-weight:bold;color:#e2b96f">🍳 조리대</span>
+        <button id="kitchen-close" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:14px">✕</button>
+      </div>
+      <div id="kitchen-recipes" style="display:flex;flex-direction:column;gap:6px"></div>
+      <div id="kitchen-progress" style="margin-top:10px;display:none">
+        <div id="kitchen-bar-bg" style="width:100%;height:10px;background:#1a2030;border-radius:4px;overflow:hidden">
+          <div id="kitchen-bar-fill" style="width:0%;height:100%;background:#e2a040;transition:width 0.1s linear;border-radius:4px"></div>
+        </div>
+        <div id="kitchen-bar-label" style="font-size:10px;color:#aaa;text-align:center;margin-top:4px"></div>
+      </div>
+      <div id="kitchen-status" style="font-size:10px;color:#88cc88;min-height:16px;margin-top:6px;text-align:center"></div>
+    `;
+
+    document.body.appendChild(panel);
+    this.kitchenPanel = panel;
+
+    panel.querySelector('#kitchen-close')!.addEventListener('click', () => this.closeKitchenPanel());
+    this.refreshKitchenPanel(panel);
+  }
+
+  private refreshKitchenPanel(panel: HTMLDivElement): void {
+    const container = panel.querySelector('#kitchen-recipes') as HTMLDivElement;
+    const status = panel.querySelector('#kitchen-status') as HTMLDivElement;
+    container.innerHTML = '';
+
+    for (const recipe of COOKING_RECIPES) {
+      const canCook = recipe.inputs.every(i => this.inventory.has(i.itemId, i.amount));
+      const isCooking = this.cookingRecipe?.id === recipe.id;
+      const holdCount = recipe.inputs.length > 0
+        ? this.inventory.get(recipe.inputs[0].itemId)
+        : 0;
+      const timeSec = (this.charStats.cookTime * recipe.timeMultiplier / 1000).toFixed(1);
+
+      const row = document.createElement('div');
+      row.style.cssText = `
+        display:flex;align-items:center;justify-content:space-between;
+        padding:6px 8px;background:${canCook ? '#1a2a1a' : '#1a1a2a'};
+        border:1px solid ${canCook ? '#446644' : '#334'};border-radius:4px;
+      `;
+
+      const inputDesc = recipe.inputs.map(i => {
+        const name = i.itemId.replace('item_', '');
+        return `${name}×${i.amount}`;
+      }).join(', ');
+
+      row.innerHTML = `
+        <div>
+          <div style="color:${canCook ? '#aaffaa' : '#888'};font-weight:bold">${recipe.label}</div>
+          <div style="font-size:9px;color:#777;margin-top:2px">${inputDesc} / 보유: ${holdCount}개 → ${timeSec}s</div>
+        </div>
+      `;
+
+      const btn = document.createElement('button');
+      if (isCooking) {
+        btn.textContent = '요리 중';
+        btn.disabled = true;
+        btn.style.cssText = `padding:4px 8px;background:#555;color:#888;border:1px solid #444;border-radius:3px;font:11px monospace;cursor:default;`;
+      } else {
+        btn.textContent = canCook ? '요리' : '---';
+        btn.disabled = !canCook;
+        btn.style.cssText = `
+          padding:4px 8px;background:${canCook ? '#2a5a2a' : '#333'};
+          color:${canCook ? '#aaffaa' : '#666'};border:1px solid ${canCook ? '#446644' : '#444'};
+          border-radius:3px;cursor:${canCook ? 'pointer' : 'default'};font:11px monospace;
+        `;
+        if (canCook) {
+          btn.addEventListener('click', () => this.startCooking(recipe, panel));
+        }
+      }
+
+      row.appendChild(btn);
+      container.appendChild(row);
+    }
+
+    // 진행바 표시 여부
+    const progressDiv = panel.querySelector('#kitchen-progress') as HTMLDivElement;
+    if (this.cookingRecipe) {
+      progressDiv.style.display = 'block';
+    } else {
+      progressDiv.style.display = 'none';
+      status.textContent = '';
+    }
+  }
+
+  private startCooking(recipe: Recipe, panel: HTMLDivElement): void {
+    if (this.cookingRecipe) return; // 이미 요리 중
+
+    // 재료 차감
+    for (const input of recipe.inputs) {
+      this.inventory.remove(input.itemId, input.amount);
+    }
+
+    this.cookingRecipe = recipe;
+    this.cookingDuration = this.charStats.cookTime * recipe.timeMultiplier;
+    this.cookingStartTime = this.time.now;
+
+    const status = panel.querySelector('#kitchen-status') as HTMLDivElement;
+    const progressDiv = panel.querySelector('#kitchen-progress') as HTMLDivElement;
+    progressDiv.style.display = 'block';
+    this.refreshKitchenPanel(panel);
+
+    this.cookingTimer = this.time.delayedCall(this.cookingDuration, () => {
+      this.completeCooking(status);
+    });
+
+    status.textContent = '요리 시작!';
+  }
+
+  private completeCooking(statusEl?: HTMLDivElement | null): void {
+    const recipe = this.cookingRecipe;
+    if (!recipe) return;
+
+    this.cookingRecipe = null;
+    this.cookingTimer = null;
+
+    const canAdd = this.inventory.canAdd(recipe.output.itemId);
+    if (canAdd) {
+      this.inventory.add(recipe.output.itemId, recipe.output.amount);
+      this.survival.addAction(8);
+      if (statusEl) statusEl.textContent = `${recipe.label} 완료!`;
+    } else {
+      if (statusEl) statusEl.textContent = '⚠ 인벤토리 가득 참 — 결과물 소멸';
+    }
+
+    if (this.kitchenPanel) this.refreshKitchenPanel(this.kitchenPanel);
+  }
+
+  private cancelCooking(): void {
+    if (!this.cookingRecipe) return;
+    this.cookingTimer?.remove();
+    this.cookingTimer = null;
+    this.cookingRecipe = null;
+    this.cookingKitchenPos = null;
+
+    // 중단 메시지
+    const existing = document.getElementById('cooking-cancel-popup');
+    existing?.remove();
+    const popup = document.createElement('div');
+    popup.id = 'cooking-cancel-popup';
+    popup.style.cssText = `
+      position: fixed; bottom: 120px; left: 50%; transform: translateX(-50%);
+      color: #ff8888; font: 12px monospace; text-align: center;
+      background: rgba(0,0,0,0.7); padding: 4px 10px; border-radius: 4px;
+      z-index: 500; pointer-events: none; opacity: 1; transition: opacity 1.5s ease;
+    `;
+    popup.textContent = '요리가 중단되었습니다';
+    document.body.appendChild(popup);
+    setTimeout(() => { popup.style.opacity = '0'; setTimeout(() => popup.remove(), 1500); }, 100);
+
+    if (this.kitchenPanel) this.refreshKitchenPanel(this.kitchenPanel);
+  }
+
+  private updateKitchenProgressBar(): void {
+    if (!this.kitchenPanel || !this.cookingRecipe) return;
+    const elapsed = this.time.now - this.cookingStartTime;
+    const pct = Math.min(100, (elapsed / this.cookingDuration) * 100);
+    const remaining = Math.max(0, (this.cookingDuration - elapsed) / 1000).toFixed(1);
+
+    const fill = this.kitchenPanel.querySelector('#kitchen-bar-fill') as HTMLDivElement;
+    const label = this.kitchenPanel.querySelector('#kitchen-bar-label') as HTMLDivElement;
+    if (fill) fill.style.width = `${pct}%`;
+    if (label) label.textContent = `요리 중… ${remaining}s`;
+  }
+
+  private closeKitchenPanel(): void {
+    this.kitchenPanel?.remove();
+    this.kitchenPanel = null;
+    // 요리가 진행 중이면 계속 진행 (패널 닫기 = 취소 아님)
+    // cookingRecipe/timer는 유지됨
   }
 }

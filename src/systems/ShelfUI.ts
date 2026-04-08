@@ -15,6 +15,8 @@ const ITEM_NAMES: Record<string, string> = {
   item_bow: '활',
   item_sword_wood: '나무칼',
   item_sword_stone: '석재칼',
+  item_fishing_rod: '낚싯대',
+  item_torch: '횃불',
 };
 
 function itemEmoji(itemId: string): string {
@@ -31,6 +33,8 @@ function itemEmoji(itemId: string): string {
     item_bow: '🏹',
     item_sword_wood: '🗡',
     item_sword_stone: '⚔',
+    item_fishing_rod: '🎣',
+    item_torch: '🔥',
   };
   return map[itemId] ?? '📦';
 }
@@ -131,7 +135,7 @@ export class ShelfUI {
     container.appendChild(playerCol);
     container.appendChild(shelfCol);
 
-    // Footer with button
+    // Footer with buttons
     const footer = document.createElement('div');
     footer.style.cssText = `
       margin-top: 12px; padding-top: 8px; border-top: 1px solid #334;
@@ -143,6 +147,11 @@ export class ShelfUI {
         background: #2a4a2a; border: 1px solid #4a7a4a; color: #aaffaa;
         border-radius: 4px; cursor: pointer; font-family: monospace; font-size: 11px;
       ">→ 전부 이동</button>
+      <button id="shelf-take-all" style="
+        flex: 1; padding: 6px 12px;
+        background: #2a2a4a; border: 1px solid #4a4a7a; color: #aaaaff;
+        border-radius: 4px; cursor: pointer; font-family: monospace; font-size: 11px;
+      ">← 전부 꺼내기</button>
     `;
 
     panel.appendChild(header);
@@ -155,6 +164,7 @@ export class ShelfUI {
     // Attach event listeners
     panel.querySelector('#shelf-close')!.addEventListener('click', () => this.close());
     panel.querySelector('#shelf-move-all')!.addEventListener('click', () => this.moveAllToShelf());
+    panel.querySelector('#shelf-take-all')!.addEventListener('click', () => this.takeAllFromShelf());
 
     this.refreshPanel();
   }
@@ -182,8 +192,20 @@ export class ShelfUI {
       const itemId = playerKeys[i] ?? null;
       const qty = itemId ? playerSlotMap.get(itemId) ?? 0 : 0;
 
-      const slot = this.createSlotElement(itemId, qty, true, playerTooltip);
-      playerSlotsContainer.appendChild(slot);
+      const slotEl = this.createSlotElement(itemId, qty, true, playerTooltip);
+      if (itemId) {
+        // 좌클릭: 1개 선반으로 이동
+        slotEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.moveOneToShelf(itemId);
+        });
+        // 우클릭: 전부 선반으로 이동
+        slotEl.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          this.moveAllOfItemToShelf(itemId);
+        });
+      }
+      playerSlotsContainer.appendChild(slotEl);
     }
 
     // Shelf inventory (20 slots)
@@ -191,6 +213,19 @@ export class ShelfUI {
     for (let i = 0; i < this.shelfStorage.SLOT_COUNT; i++) {
       const slot = shelfSlots[i];
       const slotEl = this.createSlotElement(slot.itemId, slot.quantity, false, shelfTooltip, i);
+      if (slot.itemId) {
+        const slotIndex = i;
+        // 좌클릭: 1개 플레이어 인벤으로 이동
+        slotEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.moveOneFromShelf(slotIndex, shelfTooltip);
+        });
+        // 우클릭: 해당 슬롯 전부 플레이어 인벤으로 이동
+        slotEl.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          this.moveAllFromShelfSlot(slotIndex, shelfTooltip);
+        });
+      }
       shelfSlotsContainer.appendChild(slotEl);
     }
   }
@@ -226,10 +261,15 @@ export class ShelfUI {
       countDiv.textContent = `${quantity}`;
       slot.appendChild(countDiv);
 
+      const moveHint = isPlayerSlot
+        ? '클릭: 1개 이동 / 우클릭: 전부 이동'
+        : '클릭: 1개 꺼내기 / 우클릭: 전부 꺼내기';
       slot.addEventListener('mouseenter', () => {
-        tooltip.textContent = `${ITEM_NAMES[itemId] ?? itemId} ×${quantity}`;
+        slot.style.background = '#2a3040';
+        tooltip.textContent = `${ITEM_NAMES[itemId] ?? itemId} ×${quantity} / ${moveHint}`;
       });
       slot.addEventListener('mouseleave', () => {
+        slot.style.background = '#1a2030';
         tooltip.textContent = '';
       });
     }
@@ -242,9 +282,7 @@ export class ShelfUI {
 
     const playerItems = this.playerInventory.getAll();
     for (const { key, count } of playerItems) {
-      // Try to add to shelf
       const remaining = this.shelfStorage.addItem(key, count);
-      // Remove from player inventory the amount that was successfully added
       const moved = count - remaining;
       if (moved > 0) {
         this.playerInventory.remove(key, moved);
@@ -252,6 +290,111 @@ export class ShelfUI {
     }
 
     this.refreshPanel();
+  }
+
+  private takeAllFromShelf(): void {
+    if (!this.shelfStorage || !this.playerInventory) return;
+
+    const shelfItems = this.shelfStorage.getAll();
+    for (const { itemId, quantity } of shelfItems) {
+      let remaining = quantity;
+      for (let moved = 0; moved < quantity; moved++) {
+        if (!this.playerInventory.canAdd(itemId)) break;
+        this.playerInventory.add(itemId, 1);
+        remaining--;
+      }
+      const movedCount = quantity - remaining;
+      if (movedCount > 0) {
+        // Remove moved items from shelf (find and reduce slots)
+        let toRemove = movedCount;
+        for (let i = 0; i < this.shelfStorage.SLOT_COUNT && toRemove > 0; i++) {
+          const slot = this.shelfStorage.getSlot(i);
+          if (slot?.itemId === itemId) {
+            const take = Math.min(toRemove, slot.quantity);
+            this.shelfStorage.removeFromSlot(i, take);
+            toRemove -= take;
+          }
+        }
+      }
+    }
+
+    this.refreshPanel();
+  }
+
+  private moveOneToShelf(itemId: string): void {
+    if (!this.shelfStorage || !this.playerInventory) return;
+    if (!this.playerInventory.has(itemId, 1)) return;
+
+    const remaining = this.shelfStorage.addItem(itemId, 1);
+    if (remaining === 0) {
+      this.playerInventory.remove(itemId, 1);
+    }
+
+    this.refreshPanel();
+  }
+
+  private moveAllOfItemToShelf(itemId: string): void {
+    if (!this.shelfStorage || !this.playerInventory) return;
+    const count = this.playerInventory.get(itemId);
+    if (count === 0) return;
+
+    const remaining = this.shelfStorage.addItem(itemId, count);
+    const moved = count - remaining;
+    if (moved > 0) {
+      this.playerInventory.remove(itemId, moved);
+    }
+
+    this.refreshPanel();
+  }
+
+  private moveOneFromShelf(slotIndex: number, tooltip: HTMLDivElement): void {
+    if (!this.shelfStorage || !this.playerInventory) return;
+    const slot = this.shelfStorage.getSlot(slotIndex);
+    if (!slot?.itemId) return;
+
+    if (!this.playerInventory.canAdd(slot.itemId)) {
+      tooltip.textContent = '인벤토리 가득 참';
+      this.highlightShelfSlotFull(slotIndex);
+      return;
+    }
+
+    this.shelfStorage.removeFromSlot(slotIndex, 1);
+    this.playerInventory.add(slot.itemId, 1);
+    this.refreshPanel();
+  }
+
+  private moveAllFromShelfSlot(slotIndex: number, tooltip: HTMLDivElement): void {
+    if (!this.shelfStorage || !this.playerInventory) return;
+    const slot = this.shelfStorage.getSlot(slotIndex);
+    if (!slot?.itemId) return;
+
+    if (!this.playerInventory.canAdd(slot.itemId)) {
+      tooltip.textContent = '인벤토리 가득 참';
+      this.highlightShelfSlotFull(slotIndex);
+      return;
+    }
+
+    const itemId = slot.itemId;
+    let moved = 0;
+    while (this.shelfStorage.getSlot(slotIndex)?.itemId === itemId) {
+      if (!this.playerInventory.canAdd(itemId)) break;
+      if (!this.shelfStorage.removeFromSlot(slotIndex, 1)) break;
+      this.playerInventory.add(itemId, 1);
+      moved++;
+    }
+
+    if (moved > 0) this.refreshPanel();
+  }
+
+  private highlightShelfSlotFull(slotIndex: number): void {
+    if (!this.panel) return;
+    const shelfSlotsContainer = this.panel.querySelector('#shelf-slots') as HTMLDivElement;
+    const slotEl = shelfSlotsContainer?.children[slotIndex] as HTMLDivElement;
+    if (!slotEl) return;
+    slotEl.style.border = '1px solid #ff4444';
+    setTimeout(() => {
+      slotEl.style.border = '1px solid #334';
+    }, 1000);
   }
 
   private startDistanceCheck(): void {
