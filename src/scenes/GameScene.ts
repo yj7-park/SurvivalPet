@@ -71,6 +71,12 @@ export class GameScene extends Phaser.Scene {
   private moveTarget: { worldX: number; worldY: number } | null = null;
   private moveTargetCommand: Command | null = null;
 
+  // Tree regeneration
+  private clearedTrees: { tx: number; ty: number }[] = [];
+  private treeRegenTimer = 0;
+  private readonly TREE_REGEN_CHECK_MS = 3 * 60 * 1000; // Check every 3 game hours (180 real sec)
+  private readonly TREE_REGEN_RATE = 0.3; // Probability to regrow one tree per check
+
   // Other players
   private otherPlayerSprites = new Map<string, Phaser.GameObjects.Sprite>();
 
@@ -418,6 +424,20 @@ export class GameScene extends Phaser.Scene {
       this.buildSystem.cancelBuild();
     });
 
+    // ── 나무 재생 ──────────────────────────────────────────
+    this.treeRegenTimer += delta;
+    if (this.treeRegenTimer >= this.TREE_REGEN_CHECK_MS && this.clearedTrees.length > 0) {
+      this.treeRegenTimer = 0;
+      // Try to regenerate one tree
+      const rng = new SeededRandom(`${this.seed}_regen_${this.gameTime.day}`);
+      if (rng.next() < this.TREE_REGEN_RATE) {
+        const idx = Math.floor(rng.next() * this.clearedTrees.length);
+        const { tx, ty } = this.clearedTrees[idx];
+        this.restoreTree(tx, ty);
+        this.clearedTrees.splice(idx, 1);
+      }
+    }
+
     // Sleep text: world-space, follows player
     if (this.survival.isForcedSleep) {
       this.sleepText.setVisible(true)
@@ -543,9 +563,32 @@ export class GameScene extends Phaser.Scene {
     this.buildSystem?.clearAll();
   }
 
+  private restoreTree(tx: number, ty: number): void {
+    this.currentTiles[ty][tx] = TileType.Tree;
+    this.tileRT.draw('tile_dirt', tx * TILE_SIZE, ty * TILE_SIZE);
+    this.tileRT.draw('obj_tree', tx * TILE_SIZE, ty * TILE_SIZE - TREE_OVERHANG);
+
+    // Also restore the tile above if needed
+    if (ty > 0) {
+      const above = this.currentTiles[ty - 1]?.[tx];
+      const aboveGround = above === TileType.Water ? 'tile_water'
+                        : above === TileType.Rock  ? 'tile_rock'
+                        : 'tile_dirt';
+      this.tileRT.draw(aboveGround, tx * TILE_SIZE, (ty - 1) * TILE_SIZE);
+      if (above === TileType.Tree)
+        this.tileRT.draw('obj_tree', tx * TILE_SIZE, (ty - 1) * TILE_SIZE - TREE_OVERHANG);
+    }
+  }
+
   /** 벌목/채굴 완료 후 타일 한 칸을 Dirt로 교체하고 RT 갱신 */
   private clearTile(tx: number, ty: number): void {
+    const originalType = this.currentTiles[ty][tx];
     this.currentTiles[ty][tx] = TileType.Dirt;
+
+    // Track cleared trees for regeneration
+    if (originalType === TileType.Tree) {
+      this.clearedTrees.push({ tx, ty });
+    }
 
     // 해당 타일 지면을 dirt로 다시 그림
     this.tileRT.draw('tile_dirt', tx * TILE_SIZE, ty * TILE_SIZE);
