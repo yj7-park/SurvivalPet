@@ -130,7 +130,7 @@ export class BuildSystem {
 
   // ── 건설 ─────────────────────────────────────────────────
 
-  startBuild(defName: string, material: StructMaterial, tileX: number, tileY: number, stats: CharacterStats, inventory: Inventory): boolean {
+  startBuild(defName: string, material: StructMaterial, tileX: number, tileY: number, stats: CharacterStats, inventory: Inventory, profMult = 1.0): boolean {
     if (this.buildTarget) return false; // 이미 진행 중
 
     const def = STRUCTURE_DEFS[defName];
@@ -155,7 +155,7 @@ export class BuildSystem {
         inventory.remove(itemKey, count);
       }
 
-      const totalMs = stats.buildTime(def.baseTimeSec) * (material === 'stone' ? 2 : 1);
+      const totalMs = stats.buildTime(def.baseTimeSec) * (material === 'stone' ? 2 : 1) * profMult;
       this.buildTarget = { tileX, tileY, defName, material, totalMs };
       this.buildProgressMs = 0;
     }

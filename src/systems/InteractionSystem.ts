@@ -34,6 +34,7 @@ export class InteractionSystem {
 
   // callbacks
   private onInteractionComplete: (() => void) | null = null;
+  private onResourceGathered: ((type: 'woodcutting' | 'mining' | 'fishing') => void) | null = null;
 
   constructor(
     private scene: Phaser.Scene,
@@ -63,6 +64,7 @@ export class InteractionSystem {
   setTiles(tiles: TileType[][]): void { this.tiles = tiles; }
   hasActiveInteraction(): boolean { return this.activeTarget !== null; }
   setOnInteractionComplete(cb: (() => void) | null): void { this.onInteractionComplete = cb; }
+  setOnResourceGathered(cb: (type: 'woodcutting' | 'mining' | 'fishing') => void): void { this.onResourceGathered = cb; }
 
   /** Called from GameScene.update() on Phaser pointer-move event */
   onPointerMove(worldX: number, worldY: number, screenX: number, screenY: number): void {
@@ -247,13 +249,18 @@ export class InteractionSystem {
       this.inventory.add('item_wood', 20);
       this.survival.addAction(10);
       this.onTileCleared?.(tileX, tileY);
+      this.onResourceGathered?.('woodcutting');
     } else if (tileType === TileType.Rock) {
       this.inventory.add('item_stone', 10);
       this.survival.addAction(10);
       this.onTileCleared?.(tileX, tileY);
+      this.onResourceGathered?.('mining');
     } else if (tileType === TileType.Water) {
       const success = this.rng.next() < this.stats.fishRate;
-      if (success) this.inventory.add('item_fish', 1);
+      if (success) {
+        this.inventory.add('item_fish', 1);
+        this.onResourceGathered?.('fishing');
+      }
       this.survival.addAction(8);
     }
 

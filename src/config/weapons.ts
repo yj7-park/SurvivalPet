@@ -10,24 +10,27 @@ export interface WeaponConfig {
   projectileSpeed?: number; // px/s, ranged only
   recipe: { itemId: string; amount: number }[];
   craftTimeSec: number; // at STR 5
+  requiredCraftLevel: number; // crafting proficiency level required
 }
 
 export const WEAPONS: WeaponConfig[] = [
   {
     id: 'fists', name: '맨손', type: 'melee',
     baseDamage: 5, baseCooldownSec: 2.0, rangeTiles: 1,
-    recipe: [], craftTimeSec: 0,
+    recipe: [], craftTimeSec: 0, requiredCraftLevel: 1,
   },
   {
     id: 'bow', name: '활', type: 'ranged',
     baseDamage: 8, baseCooldownSec: 2.0, rangeTiles: 8,
     projectileSpeed: 300,
     recipe: [{ itemId: 'item_wood', amount: 8 }], craftTimeSec: 6,
+    requiredCraftLevel: 2,
   },
   {
     id: 'sword_wood', name: '나무 칼', type: 'melee',
     baseDamage: 14, baseCooldownSec: 1.5, rangeTiles: 1.5,
     recipe: [{ itemId: 'item_wood', amount: 6 }], craftTimeSec: 5,
+    requiredCraftLevel: 2,
   },
   {
     id: 'sword_stone', name: '석재 칼', type: 'melee',
@@ -36,7 +39,7 @@ export const WEAPONS: WeaponConfig[] = [
       { itemId: 'item_wood', amount: 4 },
       { itemId: 'item_processed_stone', amount: 4 },
     ],
-    craftTimeSec: 8,
+    craftTimeSec: 8, requiredCraftLevel: 5,
   },
 ];
 

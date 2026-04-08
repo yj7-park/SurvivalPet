@@ -20,6 +20,7 @@ export class CombatSystem {
   private damageTexts: { text: Phaser.GameObjects.Text; vy: number; life: number }[] = [];
   private hitFlashCallback: (() => void) | null = null;
   private combatEndCallback: (() => void) | null = null;
+  private onKillCallback: (() => void) | null = null;
   private effects: EffectSystem | null = null;
 
   constructor(
@@ -71,6 +72,7 @@ export class CombatSystem {
 
   setHitFlashCallback(cb: () => void): void { this.hitFlashCallback = cb; }
   setCombatEndCallback(cb: () => void): void { this.combatEndCallback = cb; }
+  setOnKillCallback(cb: () => void): void { this.onKillCallback = cb; }
   setEffectSystem(effects: EffectSystem): void { this.effects = effects; }
 
   /** Called when player takes damage from an animal */
@@ -134,7 +136,7 @@ export class CombatSystem {
     const drops = this.animalMgr.attackAnimal(target, dmg, this.player.sprite.x, this.player.sprite.y, this.rng);
     drops.forEach(d => this.inventory.add(d.itemKey, d.count));
     this.spawnFloatText(target.x, target.y - 20, `-${dmg}`, '#ff6666');
-    if (target.isDead) { this.survival.addAction(10); this.unlock(); }
+    if (target.isDead) { this.survival.addAction(10); this.onKillCallback?.(); this.unlock(); }
   }
 
   private spawnArrow(target: Animal): void {
@@ -178,6 +180,7 @@ export class CombatSystem {
           this.spawnHitFlash(target.x, target.y);
           if (target.isDead) {
             this.survival.addAction(10);
+            this.onKillCallback?.();
             if (this.lockedTarget === target) this.unlock();
           }
           arrowRect.destroy();

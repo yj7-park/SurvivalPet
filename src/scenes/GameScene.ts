@@ -22,6 +22,8 @@ import { WeatherSystem } from '../systems/WeatherSystem';
 import { EffectSystem } from '../systems/EffectSystem';
 import { InvasionSystem } from '../systems/InvasionSystem';
 import { COOKING_RECIPES, CRAFTING_RECIPES, Recipe } from '../config/recipes';
+import { ProficiencySystem, ProficiencyType, PROF_NAMES } from '../systems/ProficiencySystem';
+import { ResearchSystem, RESEARCH_DEFS } from '../systems/ResearchSystem';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -73,6 +75,11 @@ export class GameScene extends Phaser.Scene {
   private workbenchPanel: HTMLDivElement | null = null;
   private kitchenPanel: HTMLDivElement | null = null;
   private contextMenu: HTMLDivElement | null = null;
+
+  // 숙련도 & 연구
+  proficiency!: ProficiencySystem;
+  research!: ResearchSystem;
+  private workbenchPos: { wx: number; wy: number } | null = null;
 
   // 요리 진행 상태
   private cookingRecipe: Recipe | null = null;
@@ -143,13 +150,22 @@ export class GameScene extends Phaser.Scene {
     this.invasion = new InvasionSystem(this, this.gameTime, this.seed, playerId);
     this.commandQueue = new CommandQueue();
 
-    // 건설 완료 시 큐 진행
+    // 건설 완료 시 큐 진행 + XP
     this.buildSystem.setBuildCompleteCallback(() => {
+      this.proficiency.addXP('building', 15);
       this.commandQueue.completeCommand();
       this.processNextQueueCommand();
     });
+    this.buildSystem.setDemolishCompleteCallback(() => {
+      this.proficiency.addXP('building', 8);
+    });
     this.commandQueueUI = new CommandQueueUI(this.commandQueue);
     this.shelfUI = new ShelfUI();
+    this.proficiency = new ProficiencySystem();
+    this.research = new ResearchSystem();
+
+    // 레벨업 팝업
+    this.proficiency.setOnLevelUp((type, lvl) => this.showLevelUpPopup(type, lvl));
 
     const playerRng = new SeededRandom(`${this.seed}_drops_${playerId}`);
     this.interaction = new InteractionSystem(
@@ -161,6 +177,10 @@ export class GameScene extends Phaser.Scene {
     this.interaction.setOnInteractionComplete(() => {
       this.commandQueue.completeCommand();
       this.processNextQueueCommand();
+    });
+    this.interaction.setOnResourceGathered((type) => {
+      const xpMap: Record<string, number> = { woodcutting: 8, mining: 8, fishing: 10 };
+      this.proficiency.addXP(type as ProficiencyType, xpMap[type] ?? 8);
     });
 
     // Spawn animals on current map
@@ -177,6 +197,9 @@ export class GameScene extends Phaser.Scene {
     this.combat.setCombatEndCallback(() => {
       this.commandQueue.completeCommand();
       this.processNextQueueCommand();
+    });
+    this.combat.setOnKillCallback(() => {
+      this.proficiency.addXP('combat', 20);
     });
 
     // Pointer events — use ptr.worldX/worldY (Phaser applies camera matrix correctly)
@@ -246,6 +269,7 @@ export class GameScene extends Phaser.Scene {
               this.buildSystem.activeDef.name,
               this.buildSystem.activeMaterial,
               tx, ty, this.charStats, this.inventory,
+              this.proficiency.getSpeedMultiplier('building'),
             );
           } else {
             // 자동이동 후 건설
@@ -292,6 +316,7 @@ export class GameScene extends Phaser.Scene {
         const wbY = clickedStructure.tileY * TILE_SIZE + TILE_SIZE / 2;
         const wbDist = Math.hypot(this.player.sprite.x - wbX, this.player.sprite.y - wbY);
         if (wbDist <= BUILD_RANGE) {
+          this.workbenchPos = { wx: wbX, wy: wbY };
           this.toggleWorkbenchPanel();
         } else {
           this.buildAutoMoveTarget = { worldX: wbX, worldY: wbY };
@@ -428,6 +453,27 @@ export class GameScene extends Phaser.Scene {
     this.shelfUI.updatePlayerPosition(this.player.sprite.x, this.player.sprite.y);
     this.buildSystem.update(delta, this.survival, this.player.sprite.x, this.player.sprite.y);
 
+    // 연구 업데이트 및 작업대 이탈 감지
+    const completedResearch = this.research.update(delta);
+    if (completedResearch) {
+      this.proficiency.unlockByResearch(completedResearch.id);
+      this.showNotificationPopup(`✅ ${completedResearch.label.replace('🔬 ', '')} 연구 완료!`, '#88ffaa');
+      if (this.workbenchPanel) this.refreshWorkbenchPanel(this.workbenchPanel, 'research');
+    }
+    if (this.research.isInProgress()) {
+      const wpos = this.research.getWorkbenchPos();
+      if (wpos) {
+        const wDist = Math.hypot(this.player.sprite.x - wpos.x, this.player.sprite.y - wpos.y);
+        if (wDist > BUILD_RANGE) {
+          this.research.cancelResearch();
+          this.showNotificationPopup('연구가 중단되었습니다', '#ff8888');
+          if (this.workbenchPanel) this.refreshWorkbenchPanel(this.workbenchPanel, 'research');
+        } else if (this.workbenchPanel) {
+          this.updateResearchProgressBar(this.workbenchPanel);
+        }
+      }
+    }
+
     // 요리 중 거리 이탈 감지
     if (this.cookingRecipe && this.cookingKitchenPos) {
       const kDist = Math.hypot(
@@ -513,13 +559,16 @@ export class GameScene extends Phaser.Scene {
           if (defName === '__demolish__') {
             this.buildSystem.startDemolish(tileX, tileY, this.charStats, this.inventory);
           } else if (defName === '__open_workbench__') {
-            this.openWorkbenchPanel();
+            const owX = tileX * TILE_SIZE + TILE_SIZE / 2;
+            const owY = tileY * TILE_SIZE + TILE_SIZE / 2;
+            this.openWorkbenchPanel(owX, owY);
           } else if (defName === '__open_kitchen__') {
             const kX = tileX * TILE_SIZE + TILE_SIZE / 2;
             const kY = tileY * TILE_SIZE + TILE_SIZE / 2;
             this.openKitchenPanel(kX, kY);
           } else {
-            this.buildSystem.startBuild(defName, material, tileX, tileY, this.charStats, this.inventory);
+            this.buildSystem.startBuild(defName, material, tileX, tileY, this.charStats, this.inventory,
+              this.proficiency.getSpeedMultiplier('building'));
           }
         }
         this.buildAutoMoveTarget = null;
@@ -675,7 +724,8 @@ export class GameScene extends Phaser.Scene {
 
           if (dist <= BUILD_RANGE) {
             // 충분히 가깝다면 즉시 건설 시작
-            this.buildSystem.startBuild(defName, material, tx, ty, this.charStats, this.inventory);
+            this.buildSystem.startBuild(defName, material, tx, ty, this.charStats, this.inventory,
+              this.proficiency.getSpeedMultiplier('building'));
           } else {
             // 자동이동 후 건설
             this.buildAutoMoveTarget = { worldX: twx, worldY: twy };
@@ -963,6 +1013,7 @@ export class GameScene extends Phaser.Scene {
             this.buildSystem.getPartialAt(tileX, tileY)!.defName,
             this.buildSystem.getPartialAt(tileX, tileY)!.material,
             tileX, tileY, this.charStats, this.inventory,
+            this.proficiency.getSpeedMultiplier('building'),
           );
         } else {
           const partial = this.buildSystem.getPartialAt(tileX, tileY)!;
@@ -1010,30 +1061,52 @@ export class GameScene extends Phaser.Scene {
     this.openWorkbenchPanel(); // openWorkbenchPanel handles toggle logic
   }
 
-  private openWorkbenchPanel(): void {
+  private openWorkbenchPanel(wx?: number, wy?: number): void {
     if (this.workbenchPanel) { this.closeWorkbenchPanel(); return; }
+    if (wx !== undefined && wy !== undefined) {
+      this.workbenchPos = { wx, wy };
+    }
 
     const panel = document.createElement('div');
     panel.id = 'workbench-panel';
     panel.style.cssText = `
       position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%);
-      width: 320px; background: rgba(10,15,25,0.93);
+      width: 340px; background: rgba(10,15,25,0.93);
       border: 1px solid #664; border-radius: 6px; padding: 12px; z-index: 200;
       color: #eee; font: 12px monospace;
     `;
 
+    const craftLvl = this.proficiency.getLevel('crafting');
+    const craftXP = this.proficiency.getXP('crafting');
+    const craftNext = this.proficiency.getXPToNextLevel('crafting');
+    const craftBarPct = craftNext > 0 ? Math.round((craftXP / craftNext) * 100) : 100;
+
     panel.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
         <span style="font-weight:bold;color:#e2b96f">🔨 작업대</span>
         <button id="wb-close" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:14px">✕</button>
+      </div>
+      <div style="margin-bottom:8px;font-size:10px;color:#aaa">
+        제작 숙련도: Lv.${craftLvl}
+        <span style="display:inline-block;width:80px;height:7px;background:#1a2030;border-radius:3px;vertical-align:middle;margin:0 4px;overflow:hidden">
+          <span style="display:block;width:${craftBarPct}%;height:100%;background:#44aaff;border-radius:3px"></span>
+        </span>
+        ${craftNext > 0 ? `${craftXP}/${craftNext}` : 'MAX'}
       </div>
       <div id="wb-tabs" style="display:flex;gap:4px;margin-bottom:8px;border-bottom:1px solid #334;padding-bottom:6px">
         <button class="wb-tab" data-tab="weapon" style="flex:1;padding:4px;background:#2a3a2a;color:#aaffaa;border:1px solid #446644;border-radius:3px;cursor:pointer;font:10px monospace">무기</button>
         <button class="wb-tab" data-tab="material" style="flex:1;padding:4px;background:#1a2030;color:#888;border:1px solid #334;border-radius:3px;cursor:pointer;font:10px monospace">재료</button>
         <button class="wb-tab" data-tab="tool" style="flex:1;padding:4px;background:#1a2030;color:#888;border:1px solid #334;border-radius:3px;cursor:pointer;font:10px monospace">도구</button>
+        <button class="wb-tab" data-tab="research" style="flex:1;padding:4px;background:#1a2030;color:#888;border:1px solid #334;border-radius:3px;cursor:pointer;font:10px monospace">연구</button>
       </div>
       <div id="wb-items" style="display:flex;flex-direction:column;gap:6px"></div>
-      <div id="wb-status" style="font-size:10px;color:#88cc88;min-height:16px;margin-top:8px;text-align:center"></div>
+      <div id="wb-research-progress" style="display:none;margin-top:8px">
+        <div id="wb-res-bar-bg" style="width:100%;height:8px;background:#1a2030;border-radius:4px;overflow:hidden">
+          <div id="wb-res-bar-fill" style="width:0%;height:100%;background:#44aaff;transition:width 0.1s linear;border-radius:4px"></div>
+        </div>
+        <div id="wb-res-bar-label" style="font-size:10px;color:#aaa;text-align:center;margin-top:3px"></div>
+      </div>
+      <div id="wb-status" style="font-size:10px;color:#88cc88;min-height:16px;margin-top:6px;text-align:center"></div>
     `;
 
     document.body.appendChild(panel);
@@ -1041,7 +1114,6 @@ export class GameScene extends Phaser.Scene {
 
     panel.querySelector('#wb-close')!.addEventListener('click', () => this.closeWorkbenchPanel());
 
-    // Tab click
     let activeTab = 'weapon';
     panel.querySelectorAll('.wb-tab').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -1065,21 +1137,30 @@ export class GameScene extends Phaser.Scene {
     const status    = panel.querySelector('#wb-status') as HTMLDivElement;
     container.innerHTML = '';
 
+    const craftLvl = this.proficiency.getLevel('crafting');
+    const profMult = this.proficiency.getSpeedMultiplier('crafting');
+
     if (activeTab === 'weapon') {
       const craftableWeapons = WEAPONS.filter(w => w.recipe.length > 0);
       for (const weapon of craftableWeapons) {
+        const unlocked = craftLvl >= weapon.requiredCraftLevel;
+        if (!unlocked) {
+          container.appendChild(this.makeLockedRow(weapon.name, `제작 숙련도 Lv.${weapon.requiredCraftLevel} 필요`));
+          continue;
+        }
         const canCraft = weapon.recipe.every(r => this.inventory.has(r.itemId, r.amount));
+        const ms = this.charStats.buildTime(weapon.craftTimeSec) * profMult;
         const row = this.makeWorkbenchRow(
           weapon.name,
-          weapon.recipe.map(r => `${r.itemId.replace('item_', '')}×${r.amount} (보유:${this.inventory.get(r.itemId)})`).join(', '),
+          weapon.recipe.map(r => `${r.itemId.replace('item_', '')}×${r.amount}(보유:${this.inventory.get(r.itemId)})`).join(', '),
           canCraft,
           () => {
             for (const r of weapon.recipe) this.inventory.remove(r.itemId, r.amount);
-            const ms = this.charStats.buildTime(weapon.craftTimeSec);
             status.textContent = `제작 중… (${(ms / 1000).toFixed(1)}s)`;
             this.time.delayedCall(ms, () => {
               this.inventory.add(`item_${weapon.id}`, 1);
               this.survival.addAction(12);
+              this.proficiency.addXP('crafting', 15);
               status.textContent = `${weapon.name} 제작 완료!`;
               this.refreshWorkbenchPanel(panel, activeTab);
             });
@@ -1087,17 +1168,21 @@ export class GameScene extends Phaser.Scene {
         );
         container.appendChild(row);
       }
+    } else if (activeTab === 'research') {
+      this.renderResearchTab(container, status);
     } else {
       const recipes = CRAFTING_RECIPES.filter(r => r.category === activeTab);
       for (const recipe of recipes) {
+        const unlocked = craftLvl >= recipe.unlock.proficiencyLevel;
+        if (!unlocked) {
+          container.appendChild(this.makeLockedRow(recipe.label, `제작 숙련도 Lv.${recipe.unlock.proficiencyLevel} 필요`));
+          continue;
+        }
         const canCraft = recipe.inputs.every(i => this.inventory.has(i.itemId, i.amount));
-        const inputStr = recipe.inputs
-          .map(i => `${i.itemId.replace('item_', '')}×${i.amount} (보유:${this.inventory.get(i.itemId)})`)
-          .join(', ');
-        const ms = this.charStats.craftTime * recipe.timeMultiplier;
+        const ms = this.charStats.craftTime * recipe.timeMultiplier * profMult;
         const row = this.makeWorkbenchRow(
           recipe.label,
-          inputStr,
+          recipe.inputs.map(i => `${i.itemId.replace('item_', '')}×${i.amount}(보유:${this.inventory.get(i.itemId)})`).join(', '),
           canCraft,
           () => {
             for (const i of recipe.inputs) this.inventory.remove(i.itemId, i.amount);
@@ -1105,7 +1190,8 @@ export class GameScene extends Phaser.Scene {
             this.time.delayedCall(ms, () => {
               this.inventory.add(recipe.output.itemId, recipe.output.amount);
               this.survival.addAction(12);
-              status.textContent = `${recipe.label} 제작 완료!`;
+              this.proficiency.addXP('crafting', 15);
+              status.textContent = `${recipe.label} 완료!`;
               this.refreshWorkbenchPanel(panel, activeTab);
             });
           },
@@ -1113,6 +1199,106 @@ export class GameScene extends Phaser.Scene {
         container.appendChild(row);
       }
     }
+  }
+
+  private renderResearchTab(container: HTMLDivElement, status: HTMLDivElement): void {
+    const buildLvl = this.proficiency.getLevel('building');
+    const craftLvl = this.proficiency.getLevel('crafting');
+
+    for (const def of RESEARCH_DEFS) {
+      const done = this.research.isCompleted(def.id);
+      const inProg = this.research.isInProgress() && this.research.getCurrentDef()?.id === def.id;
+
+      let locked = false;
+      let lockMsg = '';
+      if (def.requiredProficiency) {
+        const have = def.requiredProficiency.type === 'building' ? buildLvl : craftLvl;
+        if (have < def.requiredProficiency.level) {
+          locked = true;
+          lockMsg = `${PROF_NAMES[def.requiredProficiency.type]} 숙련도 Lv.${def.requiredProficiency.level} 필요 (현재 Lv.${have})`;
+        }
+      }
+
+      if (locked) {
+        container.appendChild(this.makeLockedRow(def.label, lockMsg));
+        continue;
+      }
+
+      const canStart = !done && !this.research.isInProgress()
+        && def.inputs.every(i => this.inventory.has(i.itemId, i.amount));
+      const inputStr = def.inputs.map(i => `${i.itemId.replace('item_', '')}×${i.amount}(보유:${this.inventory.get(i.itemId)})`).join(', ');
+
+      const row = document.createElement('div');
+      row.style.cssText = `
+        display:flex;align-items:center;justify-content:space-between;
+        padding:6px 8px;background:${done ? '#1a2a1a' : canStart ? '#1a1a2a' : '#111'};
+        border:1px solid ${done ? '#446644' : '#334'};border-radius:4px;
+      `;
+      row.innerHTML = `
+        <div>
+          <div style="color:${done ? '#88ff88' : '#ccc'};font-weight:bold">${def.label}</div>
+          <div style="font-size:9px;color:#777;margin-top:2px">${inputStr} / ${(def.timeMs / 1000).toFixed(0)}s</div>
+        </div>
+      `;
+
+      const btn = document.createElement('button');
+      if (done) {
+        btn.textContent = '✅ 완료';
+        btn.disabled = true;
+        btn.style.cssText = `padding:4px 8px;background:#2a4a2a;color:#88ff88;border:1px solid #446644;border-radius:3px;font:10px monospace;cursor:default;`;
+      } else if (inProg) {
+        btn.textContent = '연구 중';
+        btn.disabled = true;
+        btn.style.cssText = `padding:4px 8px;background:#555;color:#888;border:1px solid #444;border-radius:3px;font:10px monospace;cursor:default;`;
+      } else {
+        btn.textContent = canStart ? '연구' : '---';
+        btn.disabled = !canStart;
+        btn.style.cssText = `padding:4px 8px;background:${canStart ? '#2a2a5a' : '#333'};color:${canStart ? '#aaaaff' : '#666'};border:1px solid ${canStart ? '#44446a' : '#444'};border-radius:3px;font:10px monospace;cursor:${canStart ? 'pointer' : 'default'};`;
+        if (canStart) {
+          btn.addEventListener('click', () => {
+            const pos = this.workbenchPos ?? { wx: this.player.sprite.x, wy: this.player.sprite.y };
+            this.research.startResearch(def, this.inventory, pos.wx, pos.wy);
+            status.textContent = '연구 시작!';
+            if (this.workbenchPanel) this.refreshWorkbenchPanel(this.workbenchPanel, 'research');
+          });
+        }
+      }
+
+      row.appendChild(btn);
+      container.appendChild(row);
+    }
+  }
+
+  private updateResearchProgressBar(panel: HTMLDivElement): void {
+    const progressDiv = panel.querySelector('#wb-research-progress') as HTMLDivElement;
+    const fill = panel.querySelector('#wb-res-bar-fill') as HTMLDivElement;
+    const label = panel.querySelector('#wb-res-bar-label') as HTMLDivElement;
+    if (!progressDiv || !this.research.isInProgress()) {
+      progressDiv?.style && (progressDiv.style.display = 'none');
+      return;
+    }
+    progressDiv.style.display = 'block';
+    const elapsed = this.research.getElapsed();
+    const total = this.research.getCurrentDuration();
+    const pct = Math.min(100, (elapsed / total) * 100);
+    const remaining = Math.max(0, (total - elapsed) / 1000).toFixed(1);
+    if (fill) fill.style.width = `${pct}%`;
+    if (label) label.textContent = `연구 중… ${remaining}s`;
+  }
+
+  private makeLockedRow(name: string, reason: string): HTMLDivElement {
+    const row = document.createElement('div');
+    row.style.cssText = `
+      display:flex;align-items:center;justify-content:space-between;
+      padding:6px 8px;background:#111;border:1px solid #222;border-radius:4px;opacity:0.6;
+    `;
+    row.innerHTML = `
+      <div>
+        <div style="color:#666">🔒 ${name}</div>
+        <div style="font-size:9px;color:#555;margin-top:2px">${reason}</div>
+      </div>
+    `;
+    return row;
   }
 
   private makeWorkbenchRow(
@@ -1156,6 +1342,34 @@ export class GameScene extends Phaser.Scene {
     this.workbenchPanel = null;
   }
 
+  // ── 레벨업 / 알림 팝업 ──────────────────────────────────────────────────────
+
+  private showLevelUpPopup(type: ProficiencyType, level: number): void {
+    const name = PROF_NAMES[type];
+    this.showNotificationPopup(`⬆ ${name} 숙련도 Lv.${level}!`, '#ffd700', true);
+  }
+
+  showNotificationPopup(message: string, color = '#ffd700', large = false): void {
+    const existing = document.getElementById('notif-popup-' + message.slice(0, 10));
+    existing?.remove();
+
+    const popup = document.createElement('div');
+    popup.style.cssText = `
+      position: fixed; top: 40%; left: 50%; transform: translateX(-50%);
+      color: ${color}; font: ${large ? 'bold 14px' : '12px'} monospace; text-align: center;
+      background: rgba(0,0,0,0.7); padding: 6px 14px; border-radius: 4px;
+      z-index: 600; pointer-events: none; opacity: 1; transition: opacity 1.5s ease;
+      white-space: nowrap;
+    `;
+    popup.textContent = message;
+    document.body.appendChild(popup);
+
+    setTimeout(() => {
+      popup.style.opacity = '0';
+      setTimeout(() => popup.remove(), 1500);
+    }, 200);
+  }
+
   // ── isNearTable ──────────────────────────────────────────────────────────────
 
   isNearTable(): boolean {
@@ -1191,10 +1405,22 @@ export class GameScene extends Phaser.Scene {
       color: #eee; font: 12px monospace;
     `;
 
+    const cookLvl = this.proficiency.getLevel('cooking');
+    const cookXP = this.proficiency.getXP('cooking');
+    const cookNext = this.proficiency.getXPToNextLevel('cooking');
+    const cookBarPct = cookNext > 0 ? Math.round((cookXP / cookNext) * 100) : 100;
+
     panel.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
         <span style="font-weight:bold;color:#e2b96f">🍳 조리대</span>
         <button id="kitchen-close" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:14px">✕</button>
+      </div>
+      <div style="margin-bottom:8px;font-size:10px;color:#aaa">
+        요리 숙련도: Lv.${cookLvl}
+        <span style="display:inline-block;width:80px;height:7px;background:#1a2030;border-radius:3px;vertical-align:middle;margin:0 4px;overflow:hidden">
+          <span style="display:block;width:${cookBarPct}%;height:100%;background:#e2a040;border-radius:3px"></span>
+        </span>
+        ${cookNext > 0 ? `${cookXP}/${cookNext}` : 'MAX'}
       </div>
       <div id="kitchen-recipes" style="display:flex;flex-direction:column;gap:6px"></div>
       <div id="kitchen-progress" style="margin-top:10px;display:none">
@@ -1218,13 +1444,21 @@ export class GameScene extends Phaser.Scene {
     const status = panel.querySelector('#kitchen-status') as HTMLDivElement;
     container.innerHTML = '';
 
+    const cookLvl2 = this.proficiency.getLevel('cooking');
+    const cookProfMult = this.proficiency.getSpeedMultiplier('cooking');
+
     for (const recipe of COOKING_RECIPES) {
+      // 숙련도 잠금 체크
+      if (cookLvl2 < recipe.unlock.proficiencyLevel) {
+        container.appendChild(this.makeLockedRow(recipe.label, `요리 숙련도 Lv.${recipe.unlock.proficiencyLevel} 필요`));
+        continue;
+      }
       const canCook = recipe.inputs.every(i => this.inventory.has(i.itemId, i.amount));
       const isCooking = this.cookingRecipe?.id === recipe.id;
       const holdCount = recipe.inputs.length > 0
         ? this.inventory.get(recipe.inputs[0].itemId)
         : 0;
-      const timeSec = (this.charStats.cookTime * recipe.timeMultiplier / 1000).toFixed(1);
+      const timeSec = (this.charStats.cookTime * recipe.timeMultiplier * cookProfMult / 1000).toFixed(1);
 
       const row = document.createElement('div');
       row.style.cssText = `
@@ -1286,7 +1520,8 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.cookingRecipe = recipe;
-    this.cookingDuration = this.charStats.cookTime * recipe.timeMultiplier;
+    const cookPM = this.proficiency.getSpeedMultiplier('cooking');
+    this.cookingDuration = this.charStats.cookTime * recipe.timeMultiplier * cookPM;
     this.cookingStartTime = this.time.now;
 
     const status = panel.querySelector('#kitchen-status') as HTMLDivElement;
@@ -1312,6 +1547,8 @@ export class GameScene extends Phaser.Scene {
     if (canAdd) {
       this.inventory.add(recipe.output.itemId, recipe.output.amount);
       this.survival.addAction(8);
+      const xp = recipe.output.amount >= 2 ? 20 : 12;
+      this.proficiency.addXP('cooking', xp);
       if (statusEl) statusEl.textContent = `${recipe.label} 완료!`;
     } else {
       if (statusEl) statusEl.textContent = '⚠ 인벤토리 가득 참 — 결과물 소멸';
