@@ -18,6 +18,8 @@ import { CommandQueue, Command } from '../systems/CommandQueue';
 import { CommandQueueUI } from '../systems/CommandQueueUI';
 import { ShelfStorage } from '../systems/ShelfStorage';
 import { ShelfUI } from '../systems/ShelfUI';
+import { WeatherSystem } from '../systems/WeatherSystem';
+import { EffectSystem } from '../systems/EffectSystem';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -42,6 +44,7 @@ export class GameScene extends Phaser.Scene {
   gameTime!: GameTime;
   inventory!: Inventory;
   combat!: CombatSystem;
+  weather!: WeatherSystem;
 
   private tileRT!: Phaser.GameObjects.RenderTexture;
   private mapGenerator!: MapGenerator;
@@ -58,6 +61,7 @@ export class GameScene extends Phaser.Scene {
   private animalMgr!: AnimalManager;
   private interaction!: InteractionSystem;
   private buildSystem!: BuildSystem;
+  private effects!: EffectSystem;
   private buildPanel: HTMLDivElement | null = null;
   private frenzyDamageTimer = 0;
   private commandQueue!: CommandQueue;
@@ -97,6 +101,7 @@ export class GameScene extends Phaser.Scene {
     this.charStats = new CharacterStats(this.seed, playerId);
     this.survival = new SurvivalStats(this.charStats);
     this.gameTime = new GameTime();
+    this.weather = new WeatherSystem(this, this.gameTime, this.seed);
 
     this.mapGenerator = new MapGenerator(this.seed);
     const firstMap = this.mapGenerator.generateMap(0, 0);
@@ -119,6 +124,7 @@ export class GameScene extends Phaser.Scene {
     this.animalMgr = new AnimalManager();
     this.buildSystem = new BuildSystem();
     this.buildSystem.init(this);
+    this.effects = new EffectSystem(this);
     this.commandQueue = new CommandQueue();
 
     // 건설 완료 시 큐 진행
@@ -149,6 +155,7 @@ export class GameScene extends Phaser.Scene {
     this.combat = new CombatSystem(
       this, this.player, this.charStats, this.survival, this.inventory, this.animalMgr, playerRng2,
     );
+    this.combat.setEffectSystem(this.effects);
 
     // 전투 종료 시 큐 진행
     this.combat.setCombatEndCallback(() => {
@@ -368,6 +375,7 @@ export class GameScene extends Phaser.Scene {
   update(time: number, delta: number) {
     this.gameTime.update(delta);
     this.survival.update(delta);
+    this.weather.update(delta);
     this.shelfUI.updatePlayerPosition(this.player.sprite.x, this.player.sprite.y);
     this.buildSystem.update(delta, this.survival, this.player.sprite.x, this.player.sprite.y);
 

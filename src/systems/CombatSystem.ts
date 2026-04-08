@@ -8,6 +8,7 @@ import { AnimalManager } from './AnimalManager';
 import { SeededRandom } from '../utils/seedRandom';
 import { WeaponConfig, calcDamage, calcCooldownMs, calcDodgeChance, WEAPONS } from '../config/weapons';
 import { TILE_SIZE } from '../world/MapGenerator';
+import { EffectSystem } from './EffectSystem';
 
 export class CombatSystem {
   private lockedTarget: Animal | null = null;
@@ -19,6 +20,7 @@ export class CombatSystem {
   private damageTexts: { text: Phaser.GameObjects.Text; vy: number; life: number }[] = [];
   private hitFlashCallback: (() => void) | null = null;
   private combatEndCallback: (() => void) | null = null;
+  private effects: EffectSystem | null = null;
 
   constructor(
     private scene: Phaser.Scene,
@@ -69,6 +71,7 @@ export class CombatSystem {
 
   setHitFlashCallback(cb: () => void): void { this.hitFlashCallback = cb; }
   setCombatEndCallback(cb: () => void): void { this.combatEndCallback = cb; }
+  setEffectSystem(effects: EffectSystem): void { this.effects = effects; }
 
   /** Called when player takes damage from an animal */
   onPlayerHit(dmg: number): void {

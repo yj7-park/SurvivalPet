@@ -8,6 +8,7 @@ type GameSceneRef = {
   gameTime: import('../systems/GameTime').GameTime;
   inventory: import('../systems/Inventory').Inventory;
   combat: import('../systems/CombatSystem').CombatSystem;
+  weather: import('../systems/WeatherSystem').WeatherSystem;
   seed: string;
   mapX: number;
   mapY: number;
@@ -114,8 +115,9 @@ export class UIScene extends Phaser.Scene {
     const c = gs.charStats;
     const BAR_W = 90;
 
-    // 시간 & 맵
-    this.hudTimeText.setText(gs.gameTime.toString());
+    // 시간 & 맵 & 날씨
+    const weatherIcon = gs.weather.getWeatherIcon();
+    this.hudTimeText.setText(`${gs.gameTime.toString()}  ${weatherIcon}`);
     this.hudInfoText.setText(`Seed: ${gs.seed}   Map (${gs.mapX},${gs.mapY})`);
 
     // 스탯 바
