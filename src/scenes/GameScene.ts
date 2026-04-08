@@ -67,6 +67,10 @@ export class GameScene extends Phaser.Scene {
   private buildAutoMoveTarget: { worldX: number; worldY: number } | null = null;
   private pendingBuild: { defName: string; material: StructMaterial; tileX: number; tileY: number } | null = null;
 
+  // Click-to-move target
+  private moveTarget: { worldX: number; worldY: number } | null = null;
+  private moveTargetCommand: Command | null = null;
+
   // Other players
   private otherPlayerSprites = new Map<string, Phaser.GameObjects.Sprite>();
 
@@ -212,6 +216,27 @@ export class GameScene extends Phaser.Scene {
         return;
       }
 
+      // Check for Dirt tile click — move to position
+      const tx = Math.floor(wx / TILE_SIZE);
+      const ty = Math.floor(wy / TILE_SIZE);
+      if (tx >= 0 && tx < 100 && ty >= 0 && ty < 100) {
+        const tileType = this.currentTiles[ty]?.[tx];
+        if (tileType === TileType.Dirt) {
+          if (isShiftHeld) {
+            // Add move command to queue
+            const moveCmd: Command = { id: '', type: 'move', targetX: tx, targetY: ty };
+            if (!this.commandQueue.add(moveCmd)) {
+              console.warn('큐가 가득 찼습니다');
+            }
+          } else {
+            // Direct move to position
+            const moveCmd: Command = { id: '', type: 'move', targetX: tx, targetY: ty };
+            this.executeImmediateMove(moveCmd);
+          }
+          return;
+        }
+      }
+
       // Tile interaction - pass shift flag to interaction system
       this.interaction.onPointerDown(wx, wy, isShiftHeld, this.commandQueue);
     });
@@ -288,6 +313,29 @@ export class GameScene extends Phaser.Scene {
       this.buildAutoMoveTarget = null;
       this.pendingBuild = null;
       this.buildSystem.cancelBuild();
+      this.moveTarget = null;
+      this.moveTargetCommand = null;
+    }
+
+    // ── 자동이동: 클릭 이동 ──────────────────────────────────
+    if (this.moveTarget && !this.survival.isIncapacitated) {
+      const dx = this.moveTarget.worldX - this.player.sprite.x;
+      const dy = this.moveTarget.worldY - this.player.sprite.y;
+      const dist = Math.hypot(dx, dy);
+      const MOVE_TOLERANCE = 4; // pixels
+
+      if (dist <= MOVE_TOLERANCE) {
+        // Reached destination
+        if (this.moveTargetCommand) {
+          this.commandQueue.completeCommand();
+          this.processNextQueueCommand();
+        }
+        this.moveTarget = null;
+        this.moveTargetCommand = null;
+      } else {
+        const step = this.charStats.moveSpeed * (delta / 1000);
+        this.player.moveWithCollision((dx / dist) * step, (dy / dist) * step);
+      }
     }
 
     // ── 자동이동: 추적 모드 (타일 충돌 적용) ────────────────
@@ -372,12 +420,30 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
+  private executeImmediateMove(cmd: Command): void {
+    if (cmd.targetX !== undefined && cmd.targetY !== undefined) {
+      const wx = cmd.targetX * TILE_SIZE + TILE_SIZE / 2;
+      const wy = cmd.targetY * TILE_SIZE + TILE_SIZE / 2;
+      this.moveTarget = { worldX: wx, worldY: wy };
+      this.moveTargetCommand = null;
+    }
+  }
+
   private processNextQueueCommand(): void {
     if (!this.commandQueue.hasCommands()) return;
     const nextCmd = this.commandQueue.getNextCommand();
     if (!nextCmd) return;
 
     switch (nextCmd.type) {
+      case 'move': {
+        if (nextCmd.targetX !== undefined && nextCmd.targetY !== undefined) {
+          const wx = nextCmd.targetX * TILE_SIZE + TILE_SIZE / 2;
+          const wy = nextCmd.targetY * TILE_SIZE + TILE_SIZE / 2;
+          this.moveTarget = { worldX: wx, worldY: wy };
+          this.moveTargetCommand = nextCmd;
+        }
+        break;
+      }
       case 'chop':
       case 'mine':
       case 'fish': {
@@ -400,7 +466,7 @@ export class GameScene extends Phaser.Scene {
         }
         break;
       }
-      // TODO: add other command types (move, build, craft, cook, sleep)
+      // TODO: add other command types (build, craft, cook, sleep)
     }
   }
 
