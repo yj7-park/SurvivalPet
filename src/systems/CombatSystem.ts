@@ -152,6 +152,8 @@ export class CombatSystem {
     (arrow as unknown as Record<string, unknown>)['vy'] = ny * speed;
     (arrow as unknown as Record<string, unknown>)['dmg'] = calcDamage(this.equippedWeapon, this.stats.str);
     (arrow as unknown as Record<string, unknown>)['target'] = target;
+    (arrow as unknown as Record<string, unknown>)['spawnX'] = px;
+    (arrow as unknown as Record<string, unknown>)['spawnY'] = py;
   }
 
   private updateProjectiles(delta: number): void {
@@ -184,14 +186,14 @@ export class CombatSystem {
         }
       }
 
-      // Out of range or off map
+      // Out of range or off map — measure from spawn point, not current player position
       const maxRange = (this.equippedWeapon?.rangeTiles ?? 8) * TILE_SIZE;
-      const originDist = Math.hypot(
-        arrowRect.x - this.player.sprite.x,
-        arrowRect.y - this.player.sprite.y,
+      const spawnDist = Math.hypot(
+        arrowRect.x - (arrow['spawnX'] as number),
+        arrowRect.y - (arrow['spawnY'] as number),
       );
       if (
-        originDist > maxRange + 64 ||
+        spawnDist > maxRange * 2.5 ||
         arrowRect.x < -100 || arrowRect.x > 3300 ||
         arrowRect.y < -100 || arrowRect.y > 3300
       ) {

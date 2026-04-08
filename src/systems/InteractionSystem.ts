@@ -53,11 +53,11 @@ export class InteractionSystem {
     `;
     document.body.appendChild(this.tooltipDiv);
 
-    this.progressBg   = scene.add.rectangle(0, 0, 32, 5, 0x333333).setDepth(5).setVisible(false).setOrigin(0.5);
-    this.progressFill = scene.add.rectangle(0, 0, 32, 5, 0x44aaff).setDepth(6).setVisible(false).setOrigin(0.5);
+    this.progressBg   = scene.add.rectangle(0, 0, 32, 5, 0x333333).setDepth(2000).setVisible(false).setOrigin(0.5);
+    this.progressFill = scene.add.rectangle(0, 0, 32, 5, 0x44aaff).setDepth(2001).setVisible(false).setOrigin(0.5);
     this.progressLabel = scene.add.text(0, 0, '', {
       fontSize: '9px', color: '#ffffff', fontFamily: 'monospace',
-    }).setDepth(7).setVisible(false).setOrigin(0.5);
+    }).setDepth(2002).setVisible(false).setOrigin(0.5);
   }
 
   setTiles(tiles: TileType[][]): void { this.tiles = tiles; }

@@ -83,8 +83,8 @@ export class Animal {
 
     this.sprite = scene.add.sprite(x, y, `animal_${config.type}_idle`).setDepth(1);
 
-    this.hpBg   = scene.add.rectangle(x, y - 22, 32, 4, 0x333333).setDepth(3).setVisible(false).setOrigin(0.5, 0.5);
-    this.hpFill = scene.add.rectangle(x - 16, y - 22, 32, 4, 0x44ee44).setDepth(4).setVisible(false).setOrigin(0, 0.5);
+    this.hpBg   = scene.add.rectangle(x, y - 22, 32, 4, 0x333333).setDepth(2000).setVisible(false).setOrigin(0.5, 0.5);
+    this.hpFill = scene.add.rectangle(x - 16, y - 22, 32, 4, 0x44ee44).setDepth(2001).setVisible(false).setOrigin(0, 0.5);
 
     this.stateTimer = this.rng.float(2000, 5000);
   }
@@ -119,6 +119,9 @@ export class Animal {
     this.attackTimer -= delta;
     this.animTimer   -= delta;
     this.hpBarTimer   = Math.max(0, this.hpBarTimer - delta);
+
+    // Depth sort by Y
+    this.sprite.setDepth(this.sprite.y);
 
     // HP bar
     const showHp = this.hpBarTimer > 0;

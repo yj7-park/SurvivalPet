@@ -89,6 +89,9 @@ export class GameScene extends Phaser.Scene {
   private readonly TREE_REGEN_CHECK_MS = 3 * 60 * 1000; // Check every 3 game hours (180 real sec)
   private readonly TREE_REGEN_RATE = 0.3; // Probability to regrow one tree per check
 
+  // Individual tree sprites for depth sorting
+  private treeSprites = new Map<string, Phaser.GameObjects.Image>();
+
   // Other players
   private otherPlayerSprites = new Map<string, Phaser.GameObjects.Sprite>();
 
@@ -114,7 +117,7 @@ export class GameScene extends Phaser.Scene {
     const start = this.findStartTile(this.currentTiles);
     this.player = new Player(this, start.x, start.y, this.charStats);
     this.player.setTiles(this.currentTiles);
-    this.player.sprite.setDepth(2);
+    this.player.sprite.setDepth(this.player.sprite.y);
 
     this.cameras.main.startFollow(this.player.sprite, true);
     this.cameras.main.setZoom(2);
@@ -405,7 +408,7 @@ export class GameScene extends Phaser.Scene {
       this.interaction.cancelOnMove();
       this.buildAutoMoveTarget = null;
       this.pendingBuild = null;
-      this.buildSystem.cancelBuild();
+      this.buildSystem.pauseBuild(); // 진행 상태 저장 (취소 X)
       this.moveTarget = null;
       this.moveTargetCommand = null;
     }
@@ -486,7 +489,8 @@ export class GameScene extends Phaser.Scene {
     this.interaction.update(delta);
 
     // ── 깊이 정렬: Y 좌표 기반으로 캐릭터가 나무 뒤/앞에 표시되도록 ───
-    this.player.sprite.setDepth(Math.floor(this.player.sprite.y / 10));
+    // 나무 depth = (tileY+1)*TILE_SIZE, 플레이어 depth = sprite.y (같은 좌표계)
+    this.player.sprite.setDepth(this.player.sprite.y);
 
     // ── 동물 AI 업데이트 + 피격 처리 ────────────────────────
     this.animalMgr.update(delta, this.player.sprite.x, this.player.sprite.y, (dmg) => {
@@ -639,6 +643,8 @@ export class GameScene extends Phaser.Scene {
     this.currentTiles = mapData.tiles;
 
     if (this.tileRT) this.tileRT.destroy();
+    this.treeSprites.forEach(s => s.destroy());
+    this.treeSprites.clear();
     this.tileRT = this.add.renderTexture(0, 0, MAP_W * TILE_SIZE, MAP_H * TILE_SIZE).setDepth(0).setOrigin(0, 0);
     this.renderTiles(this.currentTiles);
 
@@ -646,7 +652,7 @@ export class GameScene extends Phaser.Scene {
 
     if (this.player) {
       this.player.setTiles(this.currentTiles);
-      this.player.sprite.setDepth(2);
+      this.player.sprite.setDepth(this.player.sprite.y);
     }
 
     // clear other player sprites on map change
@@ -661,18 +667,7 @@ export class GameScene extends Phaser.Scene {
   private restoreTree(tx: number, ty: number): void {
     this.currentTiles[ty][tx] = TileType.Tree;
     this.tileRT.draw('tile_dirt', tx * TILE_SIZE, ty * TILE_SIZE);
-    this.tileRT.draw('obj_tree', tx * TILE_SIZE, ty * TILE_SIZE - TREE_OVERHANG);
-
-    // Also restore the tile above if needed
-    if (ty > 0) {
-      const above = this.currentTiles[ty - 1]?.[tx];
-      const aboveGround = above === TileType.Water ? 'tile_water'
-                        : above === TileType.Rock  ? 'tile_rock'
-                        : 'tile_dirt';
-      this.tileRT.draw(aboveGround, tx * TILE_SIZE, (ty - 1) * TILE_SIZE);
-      if (above === TileType.Tree)
-        this.tileRT.draw('obj_tree', tx * TILE_SIZE, (ty - 1) * TILE_SIZE - TREE_OVERHANG);
-    }
+    this.addTreeSprite(tx, ty);
   }
 
   /** 벌목/채굴 완료 후 타일 한 칸을 Dirt로 교체하고 RT 갱신 */
@@ -683,21 +678,14 @@ export class GameScene extends Phaser.Scene {
     // Track cleared trees for regeneration
     if (originalType === TileType.Tree) {
       this.clearedTrees.push({ tx, ty });
+      // Remove tree sprite
+      const key = `${tx},${ty}`;
+      this.treeSprites.get(key)?.destroy();
+      this.treeSprites.delete(key);
     }
 
     // 해당 타일 지면을 dirt로 다시 그림
     this.tileRT.draw('tile_dirt', tx * TILE_SIZE, ty * TILE_SIZE);
-
-    // 나무는 16px 위로 튀어나오므로 위 타일도 다시 그림
-    if (ty > 0) {
-      const above = this.currentTiles[ty - 1]?.[tx];
-      const aboveGround = above === TileType.Water ? 'tile_water'
-                        : above === TileType.Rock  ? 'tile_rock'
-                        : 'tile_dirt';
-      this.tileRT.draw(aboveGround, tx * TILE_SIZE, (ty - 1) * TILE_SIZE);
-      if (above === TileType.Tree)
-        this.tileRT.draw('obj_tree', tx * TILE_SIZE, (ty - 1) * TILE_SIZE - TREE_OVERHANG);
-    }
   }
 
   private renderTiles(tiles: TileType[][]) {
@@ -708,14 +696,25 @@ export class GameScene extends Phaser.Scene {
       [TileType.Tree]:  'tile_dirt',
     };
 
+    // Draw ground tiles into RenderTexture (depth 0)
     for (let ty = 0; ty < MAP_H; ty++)
       for (let tx = 0; tx < MAP_W; tx++)
         this.tileRT.draw(groundKey[tiles[ty][tx]], tx * TILE_SIZE, ty * TILE_SIZE);
 
+    // Draw tree canopies as individual sprites for Y-based depth sorting
     for (let ty = 0; ty < MAP_H; ty++)
       for (let tx = 0; tx < MAP_W; tx++)
         if (tiles[ty][tx] === TileType.Tree)
-          this.tileRT.draw('obj_tree', tx * TILE_SIZE, ty * TILE_SIZE - TREE_OVERHANG);
+          this.addTreeSprite(tx, ty);
+  }
+
+  private addTreeSprite(tx: number, ty: number): void {
+    const key = `${tx},${ty}`;
+    const img = this.add.image(tx * TILE_SIZE, ty * TILE_SIZE - TREE_OVERHANG, 'obj_tree')
+      .setOrigin(0, 0)
+      // depth = bottom of tile = (ty+1)*TILE_SIZE so player at same row renders behind it
+      .setDepth((ty + 1) * TILE_SIZE);
+    this.treeSprites.set(key, img);
   }
 
   private findStartTile(tiles: TileType[][]): { x: number; y: number } {
