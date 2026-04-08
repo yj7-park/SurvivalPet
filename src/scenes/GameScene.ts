@@ -70,6 +70,7 @@ export class GameScene extends Phaser.Scene {
   private commandQueueUI!: CommandQueueUI;
 
   private workbenchPanel: HTMLDivElement | null = null;
+  private contextMenu: HTMLDivElement | null = null;
 
   // Shelf storage
   private shelfStorages = new Map<string, ShelfStorage>();
@@ -195,6 +196,16 @@ export class GameScene extends Phaser.Scene {
         this.buildSystem.exitBuildMode();
         this.closeBuildPanel();
         this.combat.unlock();
+        // 완공 구조물 또는 중단된 건축 위 우클릭 → 컨텍스트 팝업
+        const rtx = Math.floor(wx / TILE_SIZE);
+        const rty = Math.floor(wy / TILE_SIZE);
+        const rStruct = this.buildSystem.getAt(rtx, rty);
+        const rPartial = this.buildSystem.getPartialAt(rtx, rty);
+        if (rStruct || rPartial) {
+          const sx = (ptr.event as MouseEvent).clientX ?? ptr.x;
+          const sy = (ptr.event as MouseEvent).clientY ?? ptr.y;
+          this.showBuildContextMenu(sx, sy, rtx, rty, !!rPartial);
+        }
         return;
       }
 
@@ -365,6 +376,7 @@ export class GameScene extends Phaser.Scene {
       this.pendingBuild = null;
       this.closeBuildPanel();
       this.closeWorkbenchPanel();
+      this.closeContextMenu();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (this.scene.get('UIScene') as any)?.inventoryUI?.close();
       this.interaction.cancelOnMove();
@@ -455,7 +467,11 @@ export class GameScene extends Phaser.Scene {
       if (dist <= BUILD_RANGE) {
         if (this.pendingBuild) {
           const { defName, material, tileX, tileY } = this.pendingBuild;
-          this.buildSystem.startBuild(defName, material, tileX, tileY, this.charStats, this.inventory);
+          if (defName === '__demolish__') {
+            this.buildSystem.startDemolish(tileX, tileY, this.charStats, this.inventory);
+          } else {
+            this.buildSystem.startBuild(defName, material, tileX, tileY, this.charStats, this.inventory);
+          }
         }
         this.buildAutoMoveTarget = null;
         this.pendingBuild = null;
@@ -844,10 +860,17 @@ export class GameScene extends Phaser.Scene {
         color:${canAfford ? '#aaffaa' : '#888'}; border:1px solid #446;
         border-radius:3px; cursor:pointer; font:11px monospace;
       `;
+      const timeSec = (this.charStats.buildTime(def.baseTimeSec) * (mat === 'stone' ? 2 : 1) / 1000).toFixed(1);
+      btn.title = `소요: ${timeSec}s`;
+      btn.addEventListener('mouseenter', () => {
+        const costStr = Object.entries(cost).map(([k, v]) => `${k.replace('item_', '')}×${v}`).join(', ');
+        info.textContent = `${def.label} — ${costStr} | 소요: ${timeSec}s`;
+      });
+      btn.addEventListener('mouseleave', () => { info.textContent = ''; });
       btn.addEventListener('click', () => {
         this.buildSystem.activeDef = def;
-        const costStr = Object.entries(cost).map(([k, v]) => `${k.replace('item_', '')}: ${v} (보유: ${this.inventory.get(k)})`).join(', ');
-        info.textContent = `${def.label} (${mat === 'wood' ? '목재' : '석재'}) — ${costStr}`;
+        const costStr = Object.entries(cost).map(([k, v]) => `${k.replace('item_', '')}×${v} (보유:${this.inventory.get(k)})`).join(', ');
+        info.textContent = `${def.label} — ${costStr} | 소요: ${timeSec}s`;
       });
       container.appendChild(btn);
     }
@@ -857,6 +880,78 @@ export class GameScene extends Phaser.Scene {
     this.buildPanel?.remove();
     this.buildPanel = null;
     this.buildSystem?.exitBuildMode();
+  }
+
+  private showBuildContextMenu(screenX: number, screenY: number, tileX: number, tileY: number, isPartial: boolean): void {
+    this.closeContextMenu();
+
+    const menu = document.createElement('div');
+    menu.style.cssText = `
+      position: fixed; left: ${screenX}px; top: ${screenY}px;
+      background: rgba(10,15,25,0.96); border: 1px solid #446;
+      border-radius: 4px; padding: 4px 0; z-index: 300;
+      font: 12px monospace; color: #eee; min-width: 120px;
+    `;
+
+    const makeItem = (icon: string, label: string, onClick: () => void) => {
+      const item = document.createElement('div');
+      item.style.cssText = 'padding:6px 12px;cursor:pointer;';
+      item.textContent = `${icon} ${label}`;
+      item.addEventListener('mouseenter', () => { item.style.background = '#1a2a3a'; });
+      item.addEventListener('mouseleave', () => { item.style.background = ''; });
+      item.addEventListener('click', () => { onClick(); this.closeContextMenu(); });
+      menu.appendChild(item);
+    };
+
+    if (isPartial) {
+      makeItem('🔨', '재개', () => {
+        const wx = tileX * TILE_SIZE + TILE_SIZE / 2;
+        const wy = tileY * TILE_SIZE + TILE_SIZE / 2;
+        const dist = Math.hypot(this.player.sprite.x - wx, this.player.sprite.y - wy);
+        if (dist <= BUILD_RANGE) {
+          this.buildSystem.startBuild(
+            this.buildSystem.getPartialAt(tileX, tileY)!.defName,
+            this.buildSystem.getPartialAt(tileX, tileY)!.material,
+            tileX, tileY, this.charStats, this.inventory,
+          );
+        } else {
+          const partial = this.buildSystem.getPartialAt(tileX, tileY)!;
+          this.buildAutoMoveTarget = { worldX: wx, worldY: wy };
+          this.pendingBuild = { defName: partial.defName, material: partial.material, tileX, tileY };
+        }
+      });
+    } else {
+      makeItem('💥', '철거', () => {
+        const wx = tileX * TILE_SIZE + TILE_SIZE / 2;
+        const wy = tileY * TILE_SIZE + TILE_SIZE / 2;
+        const dist = Math.hypot(this.player.sprite.x - wx, this.player.sprite.y - wy);
+        if (dist <= BUILD_RANGE) {
+          this.buildSystem.startDemolish(tileX, tileY, this.charStats, this.inventory);
+        } else {
+          this.buildAutoMoveTarget = { worldX: wx, worldY: wy };
+          this.pendingBuild = { defName: '__demolish__', material: 'wood', tileX, tileY };
+        }
+      });
+    }
+
+    makeItem('❌', '취소', () => {});
+
+    document.body.appendChild(menu);
+    this.contextMenu = menu;
+
+    // 다른 곳 클릭 시 닫기
+    const closeOnClickOutside = (e: MouseEvent) => {
+      if (!menu.contains(e.target as Node)) {
+        this.closeContextMenu();
+        document.removeEventListener('mousedown', closeOnClickOutside);
+      }
+    };
+    document.addEventListener('mousedown', closeOnClickOutside);
+  }
+
+  private closeContextMenu(): void {
+    this.contextMenu?.remove();
+    this.contextMenu = null;
   }
 
   // ── Workbench Panel ───────────────────────────────────────────────────────────
