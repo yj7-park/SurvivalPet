@@ -15,6 +15,7 @@ dist-pages/
 
 # 에디터/시스템
 .claude/
+!.claude/commands/
 .vscode/
 .DS_Store
 Thumbs.db
