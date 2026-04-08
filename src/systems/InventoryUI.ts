@@ -2,7 +2,8 @@ import Phaser from 'phaser';
 import { Inventory } from './Inventory';
 import { SurvivalStats } from './SurvivalStats';
 import { CombatSystem } from './CombatSystem';
-import { WEAPONS } from '../config/weapons';
+import { WEAPONS, calcDamage, calcCooldownMs } from '../config/weapons';
+import { CharacterStats } from '../entities/CharacterStats';
 
 const STACK_LIMITS: Record<string, number> = {
   item_wood: 99,
@@ -56,6 +57,7 @@ export class InventoryUI {
     private inventory: Inventory,
     private survival: SurvivalStats,
     private combat: CombatSystem,
+    private charStats: CharacterStats,
   ) {
     const W = scene.scale.width;
     const H = scene.scale.height;
@@ -276,10 +278,22 @@ export class InventoryUI {
   private updateWeaponHUD(): void {
     if (this.equippedWeaponId) {
       const w = WEAPONS.find(wp => wp.id === this.equippedWeaponId);
-      this.hudWeaponName.setText(w?.name ?? this.equippedWeaponId);
+      if (w) {
+        const dmg = calcDamage(w, this.charStats.str);
+        const cooldownMs = calcCooldownMs(w, this.charStats.agi);
+        const cooldownSec = (cooldownMs / 1000).toFixed(1);
+        const text = `${w.name}\nDMG ${dmg} SPD ${cooldownSec}s`;
+        this.hudWeaponName.setText(text);
+      } else {
+        this.hudWeaponName.setText(this.equippedWeaponId);
+      }
       this.hudWeaponName.setStyle({ color: '#aaffaa' });
     } else {
-      this.hudWeaponName.setText('맨손');
+      const dmg = calcDamage(null, this.charStats.str);
+      const cooldownMs = calcCooldownMs(null, this.charStats.agi);
+      const cooldownSec = (cooldownMs / 1000).toFixed(1);
+      const text = `맨손\nDMG ${dmg} SPD ${cooldownSec}s`;
+      this.hudWeaponName.setText(text);
       this.hudWeaponName.setStyle({ color: '#ffe8a0' });
     }
   }
