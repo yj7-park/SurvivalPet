@@ -215,12 +215,18 @@ export class GameScene extends Phaser.Scene {
         return;
       }
 
-      // Check for workbench click
-      const clickedWorkbench = this.buildSystem.getAt(
+      // Check for structure interaction (workbench, shelf, etc)
+      const clickedStructure = this.buildSystem.getAt(
         Math.floor(wx / TILE_SIZE), Math.floor(wy / TILE_SIZE),
       );
-      if (clickedWorkbench?.defName === 'workbench') {
+      if (clickedStructure?.defName === 'workbench') {
         this.toggleWorkbenchPanel();
+        return;
+      }
+      if (clickedStructure?.defName === 'shelf') {
+        // Shelf interaction - open storage panel
+        // TODO: implement shelf UI
+        console.log('Shelf interaction not yet implemented');
         return;
       }
 

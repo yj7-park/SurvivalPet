@@ -564,6 +564,47 @@ function drawKitchen(pal: Palette): HTMLCanvasElement {
   return c;
 }
 
+function drawShelf(pal: Palette): HTMLCanvasElement {
+  const c = makeCanvas(); const ctx = c.getContext('2d')!;
+  ctx.clearRect(0, 0, 32, 32);
+
+  // Main frame
+  ctx.fillStyle = pal.dark;
+  ctx.fillRect(3, 8, 26, 20);
+  ctx.fillStyle = pal.mid;
+  ctx.fillRect(5, 10, 22, 18);
+
+  // Three shelves
+  const shelfYs = [13, 18, 23];
+  shelfYs.forEach(y => {
+    ctx.fillStyle = pal.light;
+    ctx.fillRect(5, y, 22, 2);
+    ctx.fillStyle = pal.dark;
+    ctx.fillRect(5, y + 2, 22, 1);
+  });
+
+  // Items on shelves (simple rectangles)
+  ctx.fillStyle = '#cc6644';
+  ctx.fillRect(7, 11, 3, 2);
+  ctx.fillRect(12, 11, 3, 2);
+  ctx.fillRect(17, 11, 3, 2);
+  ctx.fillRect(22, 11, 3, 2);
+
+  ctx.fillStyle = '#6688cc';
+  ctx.fillRect(8, 16, 2, 2);
+  ctx.fillRect(13, 16, 2, 2);
+  ctx.fillRect(18, 16, 2, 2);
+  ctx.fillRect(23, 16, 2, 2);
+
+  ctx.fillStyle = '#88aa44';
+  ctx.fillRect(6, 21, 3, 1.5);
+  ctx.fillRect(11, 21, 3, 1.5);
+  ctx.fillRect(16, 21, 3, 1.5);
+  ctx.fillRect(21, 21, 3, 1.5);
+
+  return c;
+}
+
 // ── Weapon sprites ───────────────────────────────────────────────────────────
 
 function drawBow(): HTMLCanvasElement {
@@ -856,6 +897,8 @@ export function registerTextures(scene: Phaser.Scene): void {
   scene.textures.addCanvas('struct_chair_stone',     drawChair(PAL.stone));
   scene.textures.addCanvas('struct_workbench_stone', drawWorkbench(PAL.stone));
   scene.textures.addCanvas('struct_kitchen_stone',   drawKitchen(PAL.stone));
+  scene.textures.addCanvas('struct_shelf_wood',      drawShelf(PAL.wood));
+  scene.textures.addCanvas('struct_shelf_stone',     drawShelf(PAL.stone));
 
   // Weapons & projectiles
   scene.textures.addCanvas('item_bow',           drawBow());

@@ -27,6 +27,7 @@ export const STRUCTURE_DEFS: Record<string, StructureDef> = {
   chair:      { name:'chair',      label:'의자',   baseTimeSec:2, woodCost:{item_wood:2},  stoneCost:{item_processed_stone:2},  woodDurability:40,  stoneDurability:120, passable:false },
   workbench:  { name:'workbench',  label:'작업대', baseTimeSec:6, woodCost:{item_wood:10}, stoneCost:{item_processed_stone:6},  woodDurability:80,  stoneDurability:240, passable:false },
   kitchen:    { name:'kitchen',    label:'조리대', baseTimeSec:6, woodCost:{item_wood:8},  stoneCost:{item_processed_stone:5},  woodDurability:80,  stoneDurability:240, passable:false },
+  shelf:      { name:'shelf',      label:'선반',   baseTimeSec:4, woodCost:{item_wood:6},  stoneCost:{item_processed_stone:4},  woodDurability:70,  stoneDurability:210, passable:false },
 };
 
 export interface PlacedStructure {
