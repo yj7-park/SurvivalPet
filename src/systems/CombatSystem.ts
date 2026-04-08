@@ -11,6 +11,7 @@ import { TILE_SIZE } from '../world/MapGenerator';
 
 export class CombatSystem {
   private lockedTarget: Animal | null = null;
+  private _tracking = false;   // true = 자동 추적, false = 수동 이동(락온 유지)
   private attackTimer = 0;
   private equippedWeaponId: string | null = null;
   private lockCircle: Phaser.GameObjects.Arc;
@@ -43,14 +44,20 @@ export class CombatSystem {
 
   lockOn(target: Animal): void {
     this.lockedTarget = target;
-    this.attackTimer = 0; // attack immediately
+    this._tracking = true;   // 클릭할 때마다 추적 모드로 진입
+    this.attackTimer = 0;
   }
 
   unlock(): void {
     this.lockedTarget = null;
+    this._tracking = false;
     this.lockCircle.setVisible(false);
   }
 
+  /** 이동키 입력 시: 추적만 해제하고 락온은 유지 */
+  stopTracking(): void { this._tracking = false; }
+
+  get tracking(): boolean { return this._tracking; }
   isLockedOn(): boolean { return this.lockedTarget !== null; }
   getLockedTarget(): Animal | null { return this.lockedTarget; }
 
@@ -106,8 +113,9 @@ export class CombatSystem {
     if (weapon?.type === 'ranged') {
       this.spawnArrow(this.lockedTarget);
     } else {
+      const tx = this.lockedTarget.x, ty = this.lockedTarget.y;
       this.applyMeleeDamage(this.lockedTarget);
-      this.spawnHitFlash(this.lockedTarget.x, this.lockedTarget.y);
+      this.spawnHitFlash(tx, ty); // lockedTarget이 죽어서 null이 될 수 있으므로 미리 캡처
     }
   }
 

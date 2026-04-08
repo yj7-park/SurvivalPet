@@ -7,6 +7,7 @@ import { AnimalManager } from './AnimalManager';
 import { Animal } from '../entities/Animal';
 import { SeededRandom } from '../utils/seedRandom';
 import { SurvivalStats } from './SurvivalStats';
+import { CommandQueue, Command } from './CommandQueue';
 
 const INTERACT_RANGE = 1.5 * TILE_SIZE; // 48px — 가까이 붙어서 작업
 
@@ -30,6 +31,9 @@ export class InteractionSystem {
   // auto-move toward target
   private autoMove: { worldX: number; worldY: number } | null = null;
   private pendingInteraction: (() => void) | null = null;
+
+  // callbacks
+  private onInteractionComplete: (() => void) | null = null;
 
   constructor(
     private scene: Phaser.Scene,
@@ -58,6 +62,7 @@ export class InteractionSystem {
 
   setTiles(tiles: TileType[][]): void { this.tiles = tiles; }
   hasActiveInteraction(): boolean { return this.activeTarget !== null; }
+  setOnInteractionComplete(cb: (() => void) | null): void { this.onInteractionComplete = cb; }
 
   /** Called from GameScene.update() on Phaser pointer-move event */
   onPointerMove(worldX: number, worldY: number, screenX: number, screenY: number): void {
@@ -73,13 +78,21 @@ export class InteractionSystem {
   }
 
   /** Called on left click */
-  onPointerDown(worldX: number, worldY: number): void {
+  onPointerDown(worldX: number, worldY: number, isShiftHeld: boolean = false, commandQueue?: CommandQueue): void {
     if (this.survival.isIncapacitated) return;
 
     // Check animal first
     const animal = this.animalMgr.getHovered(worldX, worldY);
     if (animal) {
-      this.startOrQueueInteraction({ kind: 'animal', animal }, worldX, worldY);
+      if (isShiftHeld && commandQueue) {
+        // Add attack command to queue
+        const cmd: Command = { id: '', type: 'attack', targetId: animal.id };
+        if (!commandQueue.add(cmd)) {
+          console.warn('큐가 가득 찼습니다');
+        }
+      } else {
+        this.startOrQueueInteraction({ kind: 'animal', animal }, worldX, worldY);
+      }
       return;
     }
 
@@ -90,11 +103,24 @@ export class InteractionSystem {
     const tileType = this.tiles[ty]?.[tx];
     if (!tileType || tileType === TileType.Dirt) return;
 
-    this.startOrQueueInteraction(
-      { kind: 'tile', tileX: tx, tileY: ty, tileType, worldX: tx * TILE_SIZE + TILE_SIZE / 2, worldY: ty * TILE_SIZE + TILE_SIZE / 2 },
-      tx * TILE_SIZE + TILE_SIZE / 2,
-      ty * TILE_SIZE + TILE_SIZE / 2,
-    );
+    if (isShiftHeld && commandQueue) {
+      // Add tile interaction command to queue
+      const cmd: Command = {
+        id: '',
+        type: tileType === TileType.Tree ? 'chop' : tileType === TileType.Rock ? 'mine' : 'fish',
+        targetX: tx,
+        targetY: ty,
+      };
+      if (!commandQueue.add(cmd)) {
+        console.warn('큐가 가득 찼습니다');
+      }
+    } else {
+      this.startOrQueueInteraction(
+        { kind: 'tile', tileX: tx, tileY: ty, tileType, worldX: tx * TILE_SIZE + TILE_SIZE / 2, worldY: ty * TILE_SIZE + TILE_SIZE / 2 },
+        tx * TILE_SIZE + TILE_SIZE / 2,
+        ty * TILE_SIZE + TILE_SIZE / 2,
+      );
+    }
   }
 
   private startOrQueueInteraction(target: InteractionTarget, targetWorldX: number, targetWorldY: number): void {
@@ -232,6 +258,7 @@ export class InteractionSystem {
     }
 
     this.cancelProgress();
+    this.onInteractionComplete?.();
   }
 
   private cancelProgress(): void {

@@ -14,6 +14,8 @@ import { SeededRandom } from '../utils/seedRandom';
 import { CombatSystem } from '../systems/CombatSystem';
 import { InventoryUI } from '../systems/InventoryUI';
 import { WEAPONS } from '../config/weapons';
+import { CommandQueue, Command } from '../systems/CommandQueue';
+import { CommandQueueUI } from '../systems/CommandQueueUI';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -56,6 +58,8 @@ export class GameScene extends Phaser.Scene {
   private buildSystem!: BuildSystem;
   private buildPanel: HTMLDivElement | null = null;
   private frenzyDamageTimer = 0;
+  private commandQueue!: CommandQueue;
+  private commandQueueUI!: CommandQueueUI;
 
   private workbenchPanel: HTMLDivElement | null = null;
 
@@ -99,6 +103,8 @@ export class GameScene extends Phaser.Scene {
     this.animalMgr = new AnimalManager();
     this.buildSystem = new BuildSystem();
     this.buildSystem.init(this);
+    this.commandQueue = new CommandQueue();
+    this.commandQueueUI = new CommandQueueUI(this.commandQueue);
 
     const playerRng = new SeededRandom(`${this.seed}_drops_${playerId}`);
     this.interaction = new InteractionSystem(
@@ -107,6 +113,10 @@ export class GameScene extends Phaser.Scene {
       (tx, ty) => this.clearTile(tx, ty),
     );
     this.interaction.setTiles(this.currentTiles);
+    this.interaction.setOnInteractionComplete(() => {
+      this.commandQueue.completeCommand();
+      this.processNextQueueCommand();
+    });
 
     // Spawn animals on current map
     this.animalMgr.spawnForMap(this.seed, 0, 0, this.currentTiles, this, new Set());
@@ -137,6 +147,7 @@ export class GameScene extends Phaser.Scene {
     this.input.on('pointerdown', (ptr: Phaser.Input.Pointer) => {
       const wx = ptr.worldX;
       const wy = ptr.worldY;
+      const isShiftHeld = (ptr.event as MouseEvent)?.shiftKey ?? false;
 
       if (ptr.rightButtonDown()) {
         this.buildSystem.exitBuildMode();
@@ -171,10 +182,24 @@ export class GameScene extends Phaser.Scene {
         return;
       }
 
+      // If Shift not held, clear queue and unlock
+      if (!isShiftHeld) {
+        this.commandQueue.clearAll();
+        this.combat.unlock();
+      }
+
       // Check for animal click — lock on via CombatSystem
       const animal = this.animalMgr.getHovered(wx, wy);
       if (animal) {
-        this.combat.lockOn(animal);
+        if (isShiftHeld) {
+          // Add attack command to queue
+          const cmd: Command = { id: '', type: 'attack', targetId: animal.id };
+          if (!this.commandQueue.add(cmd)) {
+            console.warn('큐가 가득 찼습니다');
+          }
+        } else {
+          this.combat.lockOn(animal);
+        }
         return;
       }
 
@@ -187,7 +212,8 @@ export class GameScene extends Phaser.Scene {
         return;
       }
 
-      this.interaction.onPointerDown(wx, wy);
+      // Tile interaction - pass shift flag to interaction system
+      this.interaction.onPointerDown(wx, wy, isShiftHeld, this.commandQueue);
     });
 
     // Sleep text — world-space, follows player
@@ -202,12 +228,18 @@ export class GameScene extends Phaser.Scene {
       cam.setZoom(Phaser.Math.Clamp(cam.zoom - deltaY * 0.001, 0.5, 4));
     });
 
+    // Direction keys: clear queue on keyboard movement
+    this.input.keyboard!.on('keydown-UP', () => this.commandQueue.clearAll());
+    this.input.keyboard!.on('keydown-DOWN', () => this.commandQueue.clearAll());
+    this.input.keyboard!.on('keydown-LEFT', () => this.commandQueue.clearAll());
+    this.input.keyboard!.on('keydown-RIGHT', () => this.commandQueue.clearAll());
+
     // B key: toggle build panel
     this.input.keyboard!.on('keydown-B', () => this.toggleBuildPanel());
 
     // V key: toggle inventory (handled by UIScene keyboard listener)
 
-    // ESC: exit build mode, cancel interaction, close panels, unlock target
+    // ESC: exit build mode, cancel interaction, close panels, unlock target, clear queue
     this.input.keyboard!.on('keydown-ESC', () => {
       this.buildSystem.exitBuildMode();
       this.buildSystem.cancelBuild();
@@ -219,6 +251,7 @@ export class GameScene extends Phaser.Scene {
       (this.scene.get('UIScene') as any)?.inventoryUI?.close();
       this.interaction.cancelOnMove();
       this.combat.unlock();
+      this.commandQueue.clearAll();
     });
 
     // Launch UI scene (zoom-independent HUD)
@@ -246,6 +279,30 @@ export class GameScene extends Phaser.Scene {
     // Combat update (lock-on, projectiles, damage floats)
     this.combat.update(delta);
 
+    // ── 이동키 입력 처리 ─────────────────────────────────────
+    // 락온 중 이동키 → 추적 해제(락온 유지), 채굴/건설 취소
+    const lockTarget = this.combat.getLockedTarget();
+    if (!this.survival.isIncapacitated && this.player.isMovingByKeyboard()) {
+      if (lockTarget && this.combat.tracking) this.combat.stopTracking();
+      this.interaction.cancelOnMove();
+      this.buildAutoMoveTarget = null;
+      this.pendingBuild = null;
+      this.buildSystem.cancelBuild();
+    }
+
+    // ── 자동이동: 추적 모드 (타일 충돌 적용) ────────────────
+    if (lockTarget && this.combat.tracking && !this.survival.isIncapacitated) {
+      const weapon = this.combat.equippedWeapon;
+      const rangePx = (weapon?.rangeTiles ?? 1) * TILE_SIZE;
+      const ldx = lockTarget.x - this.player.sprite.x;
+      const ldy = lockTarget.y - this.player.sprite.y;
+      const ldist = Math.hypot(ldx, ldy);
+      if (ldist > rangePx) {
+        const step = this.charStats.moveSpeed * (delta / 1000);
+        this.player.moveWithCollision((ldx / ldist) * step, (ldy / ldist) * step);
+      }
+    }
+
     // ── 자동이동: 건설 ───────────────────────────────────────
     if (this.buildAutoMoveTarget && !this.survival.isIncapacitated) {
       const dx = this.buildAutoMoveTarget.worldX - this.player.sprite.x;
@@ -264,20 +321,6 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // ── 자동이동: 락온 (타일 충돌 적용) ─────────────────────
-    const lockTarget = this.combat.getLockedTarget();
-    if (lockTarget && !this.survival.isIncapacitated) {
-      const weapon = this.combat.equippedWeapon;
-      const rangePx = (weapon?.rangeTiles ?? 1) * TILE_SIZE;
-      const ldx = lockTarget.x - this.player.sprite.x;
-      const ldy = lockTarget.y - this.player.sprite.y;
-      const ldist = Math.hypot(ldx, ldy);
-      if (ldist > rangePx) {
-        const step = this.charStats.moveSpeed * (delta / 1000);
-        this.player.moveWithCollision((ldx / ldist) * step, (ldy / ldist) * step);
-      }
-    }
-
     // ── 자동이동: 상호작용 (타일 충돌 적용) ─────────────────
     const autoTarget = this.interaction.getAutoMoveTarget();
     if (autoTarget && !this.survival.isIncapacitated) {
@@ -292,10 +335,10 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // ── 키보드 억제 여부 ─────────────────────────────────────
+    // 추적 모드 중에는 키보드 억제, 수동 사냥 모드에서는 자유 이동
     const suppressKeys = this.survival.isIncapacitated
       || autoTarget !== null
-      || lockTarget !== null
+      || (lockTarget !== null && this.combat.tracking)
       || this.buildAutoMoveTarget !== null;
 
     this.player.update(delta, suppressKeys);
@@ -310,16 +353,6 @@ export class GameScene extends Phaser.Scene {
       this.pendingBuild = null;
       this.buildSystem.cancelBuild();
     });
-
-    // ── 키보드 이동 시 진행 중 작업 취소 ────────────────────
-    if (!suppressKeys && this.player.isMovingByKeyboard()) {
-      if (this.interaction.hasActiveInteraction()) {
-        this.interaction.cancelOnMove();
-      }
-      if (this.buildSystem.isBuildInProgress()) {
-        this.buildSystem.cancelBuild();
-      }
-    }
 
     // Sleep text: world-space, follows player
     if (this.survival.isForcedSleep) {
@@ -339,6 +372,38 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
+  private processNextQueueCommand(): void {
+    if (!this.commandQueue.hasCommands()) return;
+    const nextCmd = this.commandQueue.getNextCommand();
+    if (!nextCmd) return;
+
+    switch (nextCmd.type) {
+      case 'chop':
+      case 'mine':
+      case 'fish': {
+        if (nextCmd.targetX !== undefined && nextCmd.targetY !== undefined) {
+          const wx = nextCmd.targetX * TILE_SIZE + TILE_SIZE / 2;
+          const wy = nextCmd.targetY * TILE_SIZE + TILE_SIZE / 2;
+          this.interaction.onPointerDown(wx, wy, false);
+        }
+        break;
+      }
+      case 'attack': {
+        if (nextCmd.targetId) {
+          const animal = this.animalMgr.getById(nextCmd.targetId);
+          if (animal && !animal.isDead) {
+            this.combat.lockOn(animal);
+          } else {
+            this.commandQueue.failCommand('target_died');
+            this.processNextQueueCommand();
+          }
+        }
+        break;
+      }
+      // TODO: add other command types (move, build, craft, cook, sleep)
+    }
+  }
+
   shutdown() {
     this.scene.stop('UIScene');
     this.multiplayer.destroy();
@@ -347,6 +412,7 @@ export class GameScene extends Phaser.Scene {
     this.closeBuildPanel();
     this.closeWorkbenchPanel();
     this.combat?.destroy();
+    this.commandQueueUI?.destroy();
   }
 
   // ── Map ──────────────────────────────────────────────────

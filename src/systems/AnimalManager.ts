@@ -59,6 +59,11 @@ export class AnimalManager {
     }
   }
 
+  /** Returns animal by id, or null */
+  getById(id: string): Animal | null {
+    return this.animals.find(a => a.id === id) ?? null;
+  }
+
   /** Returns animal within interaction range of (x,y), or null */
   getHovered(worldX: number, worldY: number): Animal | null {
     for (const a of this.animals) {
