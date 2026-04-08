@@ -1,0 +1,1188 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>Sprite Generator</title>
+  <style>
+    body {
+      background: #1a1a2e;
+      color: #eee;
+      font-family: monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px;
+      gap: 40px;
+    }
+    h1 { margin: 0; font-size: 20px; letter-spacing: 2px; }
+    .grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 40px;
+      justify-content: center;
+    }
+    .sprite-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+    .sprite-card canvas {
+      image-rendering: pixelated;
+      width: 128px;
+      height: 128px;
+      border: 2px solid #444;
+      border-radius: 4px;
+    }
+    .sprite-card span {
+      font-size: 13px;
+      color: #aaa;
+    }
+    button {
+      background: #16213e;
+      color: #e2b96f;
+      border: 1px solid #e2b96f;
+      padding: 6px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    button:hover { background: #e2b96f; color: #1a1a2e; }
+    .section-title {
+      font-size: 13px;
+      letter-spacing: 3px;
+      color: #e2b96f;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+  <h1>Sprite Preview</h1>
+
+  <div>
+    <p class="section-title">타일 (32×32)</p>
+    <div class="grid" id="tiles"></div>
+  </div>
+
+  <div>
+    <p class="section-title">오브젝트</p>
+    <div class="grid" id="objects"></div>
+  </div>
+
+  <div>
+    <p class="section-title">캐릭터</p>
+    <div class="grid" id="characters"></div>
+  </div>
+
+  <div>
+    <p class="section-title">아이템 아이콘 (32×32)</p>
+    <div class="grid" id="items"></div>
+  </div>
+
+  <div>
+    <p class="section-title">구조물 — 목재 (32×32)</p>
+    <div class="grid" id="struct-wood"></div>
+  </div>
+
+  <div>
+    <p class="section-title">구조물 — 석재 (32×32)</p>
+    <div class="grid" id="struct-stone"></div>
+  </div>
+
+  <div>
+    <p class="section-title">동물 (32×32)</p>
+    <div class="grid" id="animals"></div>
+  </div>
+
+  <div>
+    <p class="section-title">사냥 드롭 아이템 (32×32)</p>
+    <div class="grid" id="hunt-items"></div>
+  </div>
+
+  <div>
+    <p class="section-title">무기 (32×32 / 화살 16×6)</p>
+    <div class="grid" id="weapons"></div>
+  </div>
+
+<script>
+const TILE = 32;
+
+// ──────────────────────────────────────────────
+// 유틸
+// ──────────────────────────────────────────────
+function makeCanvas(w = TILE, h = TILE) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  return c;
+}
+
+function addCard(containerId, canvas, label) {
+  const card = document.createElement('div');
+  card.className = 'sprite-card';
+  const span = document.createElement('span');
+  span.textContent = label;
+  const btn = document.createElement('button');
+  btn.textContent = '저장 PNG';
+  btn.onclick = () => {
+    const a = document.createElement('a');
+    a.download = label.replace(/\s/g, '_') + '.png';
+    a.href = canvas.toDataURL();
+    a.click();
+  };
+  card.append(canvas, span, btn);
+  document.getElementById(containerId).appendChild(card);
+}
+
+// ──────────────────────────────────────────────
+// 간단한 seeded 난수 (재현 가능한 노이즈용)
+// ──────────────────────────────────────────────
+function seededRand(seed) {
+  let s = seed;
+  return () => {
+    s = (s * 1664525 + 1013904223) & 0xffffffff;
+    return (s >>> 0) / 0xffffffff;
+  };
+}
+
+// ──────────────────────────────────────────────
+// 1. 흙 타일
+// ──────────────────────────────────────────────
+function drawDirt() {
+  const c = makeCanvas();
+  const ctx = c.getContext('2d');
+  const rand = seededRand(42);
+
+  // 베이스
+  ctx.fillStyle = '#a0724a';
+  ctx.fillRect(0, 0, TILE, TILE);
+
+  // 밝은 스팟
+  ctx.fillStyle = '#b8895e';
+  for (let i = 0; i < 18; i++) {
+    const x = Math.floor(rand() * TILE);
+    const y = Math.floor(rand() * TILE);
+    ctx.fillRect(x, y, 2, 1);
+  }
+
+  // 어두운 스팟
+  ctx.fillStyle = '#8a5e38';
+  for (let i = 0; i < 12; i++) {
+    const x = Math.floor(rand() * TILE);
+    const y = Math.floor(rand() * TILE);
+    ctx.fillRect(x, y, 2, 2);
+  }
+
+  // 작은 돌멩이
+  ctx.fillStyle = '#9e8c7a';
+  for (let i = 0; i < 4; i++) {
+    const x = Math.floor(rand() * (TILE - 3)) + 1;
+    const y = Math.floor(rand() * (TILE - 3)) + 1;
+    ctx.fillRect(x, y, 3, 2);
+    ctx.fillStyle = '#b0a090';
+    ctx.fillRect(x, y, 1, 1);
+    ctx.fillStyle = '#9e8c7a';
+  }
+  return c;
+}
+
+// ──────────────────────────────────────────────
+// 2. 물 타일
+// ──────────────────────────────────────────────
+function drawWater() {
+  const c = makeCanvas();
+  const ctx = c.getContext('2d');
+  const rand = seededRand(99);
+
+  // 베이스
+  ctx.fillStyle = '#2e6fa3';
+  ctx.fillRect(0, 0, TILE, TILE);
+
+  // 깊은 부분
+  ctx.fillStyle = '#1d5480';
+  for (let i = 0; i < 6; i++) {
+    const x = Math.floor(rand() * (TILE - 6));
+    const y = Math.floor(rand() * (TILE - 4));
+    ctx.fillRect(x, y, 6, 3);
+  }
+
+  // 반짝임
+  ctx.fillStyle = '#6ab8e8';
+  for (let i = 0; i < 5; i++) {
+    const x = Math.floor(rand() * (TILE - 4));
+    const y = Math.floor(rand() * (TILE - 2));
+    ctx.fillRect(x, y, 4, 1);
+  }
+
+  // 흰 반짝
+  ctx.fillStyle = '#c8e8f8';
+  for (let i = 0; i < 3; i++) {
+    const x = Math.floor(rand() * (TILE - 2));
+    const y = Math.floor(rand() * (TILE - 1));
+    ctx.fillRect(x, y, 2, 1);
+  }
+
+  return c;
+}
+
+// ──────────────────────────────────────────────
+// 3. 암석 타일
+// ──────────────────────────────────────────────
+function drawRock() {
+  const c = makeCanvas();
+  const ctx = c.getContext('2d');
+  const rand = seededRand(7);
+
+  // 베이스
+  ctx.fillStyle = '#6b6b6b';
+  ctx.fillRect(0, 0, TILE, TILE);
+
+  // 어두운 균열
+  ctx.fillStyle = '#4a4a4a';
+  for (let i = 0; i < 8; i++) {
+    const x = Math.floor(rand() * TILE);
+    const y = Math.floor(rand() * TILE);
+    const w = Math.floor(rand() * 5) + 1;
+    ctx.fillRect(x, y, w, 1);
+  }
+
+  // 밝은 면
+  ctx.fillStyle = '#909090';
+  for (let i = 0; i < 10; i++) {
+    const x = Math.floor(rand() * TILE);
+    const y = Math.floor(rand() * TILE);
+    ctx.fillRect(x, y, 2, 1);
+  }
+
+  // 모서리 어둡게
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.fillRect(0, 0, TILE, 1);
+  ctx.fillRect(0, 0, 1, TILE);
+  ctx.fillRect(TILE - 1, 0, 1, TILE);
+  ctx.fillRect(0, TILE - 1, TILE, 1);
+
+  return c;
+}
+
+// ──────────────────────────────────────────────
+// 4. 나무 (흙 1칸 위에 올라가는 오브젝트)
+// ──────────────────────────────────────────────
+function drawTree() {
+  const c = makeCanvas(32, 48); // 32×48 (아래 흙칸 포함)
+  const ctx = c.getContext('2d');
+
+  // 배경 투명
+  ctx.clearRect(0, 0, 32, 48);
+
+  // 그림자
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.beginPath();
+  ctx.ellipse(16, 45, 9, 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 줄기
+  ctx.fillStyle = '#6b3f1a';
+  ctx.fillRect(13, 30, 6, 16);
+  // 줄기 하이라이트
+  ctx.fillStyle = '#8a5230';
+  ctx.fillRect(13, 30, 2, 16);
+
+  // 잎 (뒤 레이어 - 어두운)
+  ctx.fillStyle = '#2d7a3a';
+  ctx.beginPath();
+  ctx.ellipse(16, 20, 13, 14, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 잎 (메인)
+  ctx.fillStyle = '#3d9e4a';
+  ctx.beginPath();
+  ctx.ellipse(15, 18, 11, 12, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 잎 (하이라이트)
+  ctx.fillStyle = '#52c45e';
+  ctx.beginPath();
+  ctx.ellipse(13, 13, 6, 6, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 잎 끝 뾰족함
+  ctx.fillStyle = '#3d9e4a';
+  ctx.beginPath();
+  ctx.moveTo(16, 2);
+  ctx.lineTo(10, 12);
+  ctx.lineTo(22, 12);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#52c45e';
+  ctx.beginPath();
+  ctx.moveTo(16, 4);
+  ctx.lineTo(12, 12);
+  ctx.lineTo(20, 12);
+  ctx.closePath();
+  ctx.fill();
+
+  return c;
+}
+
+// ──────────────────────────────────────────────
+// 5. 캐릭터 (정면 / 4방향)
+// ──────────────────────────────────────────────
+function drawCharacter(dir = 'down') {
+  const c = makeCanvas(32, 32);
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, 32, 32);
+
+  // 그림자
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.beginPath();
+  ctx.ellipse(16, 30, 7, 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const isBack = dir === 'up';
+  const isSide = dir === 'left' || dir === 'right';
+  const flip = dir === 'right';
+
+  if (flip) {
+    ctx.save();
+    ctx.translate(32, 0);
+    ctx.scale(-1, 1);
+  }
+
+  // 다리
+  ctx.fillStyle = '#3a5fa0';
+  ctx.fillRect(10, 22, 5, 8);
+  ctx.fillRect(17, 22, 5, 8);
+  // 신발
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(9, 28, 6, 3);
+  ctx.fillRect(17, 28, 6, 3);
+
+  // 몸통
+  ctx.fillStyle = '#c84040';
+  ctx.fillRect(9, 13, 14, 11);
+  // 몸통 하이라이트
+  ctx.fillStyle = '#e05050';
+  ctx.fillRect(9, 13, 4, 11);
+
+  // 팔
+  ctx.fillStyle = '#c84040';
+  ctx.fillRect(5, 13, 4, 9);
+  ctx.fillRect(23, 13, 4, 9);
+  // 손
+  ctx.fillStyle = '#f5c8a0';
+  ctx.fillRect(5, 21, 4, 3);
+  ctx.fillRect(23, 21, 4, 3);
+
+  // 목
+  ctx.fillStyle = '#f5c8a0';
+  ctx.fillRect(13, 10, 6, 4);
+
+  // 머리
+  ctx.fillStyle = '#f5c8a0';
+  ctx.fillRect(9, 3, 14, 12);
+  // 머리 윤곽 (약간 둥글게)
+  ctx.fillStyle = '#e8b888';
+  ctx.fillRect(9, 3, 1, 1);
+  ctx.fillRect(22, 3, 1, 1);
+  ctx.fillRect(9, 14, 1, 1);
+  ctx.fillRect(22, 14, 1, 1);
+
+  if (!isBack) {
+    // 눈
+    ctx.fillStyle = '#1a1a1a';
+    if (isSide) {
+      ctx.fillRect(dir === 'left' ? 11 : 19, 7, 2, 2);
+    } else {
+      ctx.fillRect(11, 7, 3, 2);
+      ctx.fillRect(18, 7, 3, 2);
+    }
+    // 눈 흰자
+    ctx.fillStyle = '#ffffff';
+    if (!isSide) {
+      ctx.fillRect(11, 7, 1, 1);
+      ctx.fillRect(18, 7, 1, 1);
+    }
+
+    // 입
+    ctx.fillStyle = '#c07060';
+    if (!isSide) {
+      ctx.fillRect(13, 11, 6, 1);
+    }
+  }
+
+  // 머리카락
+  ctx.fillStyle = '#3a2010';
+  ctx.fillRect(9, 3, 14, 3);
+  ctx.fillRect(9, 3, 2, 5);
+  if (!isBack) ctx.fillRect(21, 3, 2, 5);
+
+  if (flip) ctx.restore();
+
+  return c;
+}
+
+// ──────────────────────────────────────────────
+// 색상 팔레트 상수
+// ──────────────────────────────────────────────
+const PAL = {
+  wood:  { dark: '#a0622a', mid: '#c8884a', light: '#e0aa6a' },
+  stone: { dark: '#5a5a5a', mid: '#909090', light: '#c0c0c0' },
+};
+
+// ──────────────────────────────────────────────
+// 아이템 아이콘
+// ──────────────────────────────────────────────
+function drawStoneItem() {
+  const c = makeCanvas(); const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,32,32);
+  // 불규칙 덩어리
+  ctx.fillStyle = '#7a7a7a';
+  ctx.beginPath(); ctx.ellipse(16,17,11,9,0.3,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#909090';
+  ctx.beginPath(); ctx.ellipse(14,15,9,7,0.3,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#b0b0b0';
+  ctx.fillRect(11,11,5,4);
+  ctx.fillStyle = '#c8c8c8';
+  ctx.fillRect(11,11,2,2);
+  return c;
+}
+
+function drawProcessedStone() {
+  const c = makeCanvas(); const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,32,32);
+  // 직사각형 블록
+  ctx.fillStyle = '#909090';
+  ctx.fillRect(6,8,20,16);
+  // 윗면 하이라이트
+  ctx.fillStyle = '#c0c0c0';
+  ctx.fillRect(6,8,20,4);
+  ctx.fillRect(6,8,3,16);
+  // 그림자
+  ctx.fillStyle = '#5a5a5a';
+  ctx.fillRect(23,8,3,16);
+  ctx.fillRect(6,21,20,3);
+  // 줄눈
+  ctx.fillStyle = '#707070';
+  ctx.fillRect(6,14,20,1);
+  ctx.fillRect(16,8,1,16);
+  return c;
+}
+
+function drawWoodItem() {
+  const c = makeCanvas(); const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,32,32);
+  // 판자 3개
+  [[4,8],[8,12],[12,8]].forEach(([x,y],i) => {
+    ctx.fillStyle = i===1 ? '#c8884a' : '#b87840';
+    ctx.fillRect(x,y,20,5);
+    ctx.fillStyle = '#e0aa6a';
+    ctx.fillRect(x,y,20,1);
+    ctx.fillStyle = '#a0622a';
+    ctx.fillRect(x,y+4,20,1);
+    // 나뭇결
+    ctx.fillStyle = 'rgba(0,0,0,0.1)';
+    for(let j=0;j<3;j++) ctx.fillRect(x+5+j*5,y+1,1,3);
+  });
+  return c;
+}
+
+function drawFish() {
+  const c = makeCanvas(); const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,32,32);
+  // 몸통
+  ctx.fillStyle = '#e07030';
+  ctx.beginPath(); ctx.ellipse(15,16,10,6,0,0,Math.PI*2); ctx.fill();
+  // 배
+  ctx.fillStyle = '#f0c080';
+  ctx.beginPath(); ctx.ellipse(14,17,7,4,0,0,Math.PI*2); ctx.fill();
+  // 꼬리
+  ctx.fillStyle = '#e07030';
+  ctx.beginPath();
+  ctx.moveTo(25,16); ctx.lineTo(30,10); ctx.lineTo(30,22); ctx.closePath();
+  ctx.fill();
+  // 지느러미
+  ctx.fillStyle = '#c05020';
+  ctx.beginPath();
+  ctx.moveTo(13,10); ctx.lineTo(18,10); ctx.lineTo(16,14); ctx.closePath();
+  ctx.fill();
+  // 눈
+  ctx.fillStyle = '#1a1a1a';
+  ctx.beginPath(); ctx.arc(8,14,2,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(7,13,1,1);
+  // 비늘
+  ctx.fillStyle = 'rgba(0,0,0,0.1)';
+  [[12,14],[16,13],[12,17],[16,17]].forEach(([x,y])=>{
+    ctx.beginPath(); ctx.arc(x,y,2,0,Math.PI*2); ctx.fill();
+  });
+  return c;
+}
+
+function drawCookedFish() {
+  const c = makeCanvas(); const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,32,32);
+  // 접시
+  ctx.fillStyle = '#e8e8e8';
+  ctx.beginPath(); ctx.ellipse(16,20,13,5,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.ellipse(16,19,11,4,0,0,Math.PI*2); ctx.fill();
+  // 구운 생선 (갈색)
+  ctx.fillStyle = '#8b4513';
+  ctx.beginPath(); ctx.ellipse(15,18,9,4,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#a0522d';
+  ctx.beginPath(); ctx.ellipse(14,17,7,3,0,0,Math.PI*2); ctx.fill();
+  // 꼬리
+  ctx.fillStyle = '#8b4513';
+  ctx.beginPath();
+  ctx.moveTo(23,18); ctx.lineTo(27,14); ctx.lineTo(27,22); ctx.closePath();
+  ctx.fill();
+  // 구운 자국
+  ctx.fillStyle = '#5a2d0c';
+  ctx.fillRect(10,17,12,1);
+  ctx.fillRect(12,15,8,1);
+  // 김 (연기)
+  ctx.fillStyle = 'rgba(200,200,200,0.5)';
+  ctx.beginPath(); ctx.ellipse(13,12,2,4,0.2,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(19,10,2,5,-0.2,0,Math.PI*2); ctx.fill();
+  return c;
+}
+
+// ──────────────────────────────────────────────
+// 구조물 헬퍼
+// ──────────────────────────────────────────────
+function structBase(ctx, pal) {
+  // 바닥면
+  ctx.fillStyle = pal.mid;
+  ctx.fillRect(1,1,30,30);
+  // 상단/좌 하이라이트
+  ctx.fillStyle = pal.light;
+  ctx.fillRect(1,1,30,3);
+  ctx.fillRect(1,1,3,30);
+  // 우/하단 그림자
+  ctx.fillStyle = pal.dark;
+  ctx.fillRect(28,1,3,30);
+  ctx.fillRect(1,28,30,3);
+}
+
+function drawWall(pal, pattern='brick') {
+  const c = makeCanvas(); const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,32,32);
+  structBase(ctx, pal);
+  if(pattern==='brick') {
+    ctx.fillStyle = pal.dark;
+    // 가로 줄눈
+    [8,16,24].forEach(y=>ctx.fillRect(1,y,30,1));
+    // 세로 줄눈 (엇갈림)
+    [0,2].forEach(row => {
+      const offset = row===0 ? 0 : 8;
+      [offset+8, offset+16, offset+24].forEach(x=>ctx.fillRect(x%30+1,row*8+1,1,8));
+    });
+  }
+  return c;
+}
+
+function drawDoor(pal) {
+  const c = makeCanvas(); const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,32,32);
+  structBase(ctx, pal);
+  // 문틈
+  ctx.fillStyle = '#1a1008';
+  ctx.fillRect(10,0,12,26);
+  // 문짝
+  ctx.fillStyle = pal.mid;
+  ctx.fillRect(11,1,10,24);
+  ctx.fillStyle = pal.light;
+  ctx.fillRect(11,1,3,24);
+  // 문손잡이
+  ctx.fillStyle = '#d4a017';
+  ctx.beginPath(); ctx.arc(19,14,2,0,Math.PI*2); ctx.fill();
+  return c;
+}
+
+function drawRoof(pal) {
+  const c = makeCanvas(); const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,32,32);
+  // 어두운 베이스
+  ctx.fillStyle = pal.dark;
+  ctx.fillRect(0,0,32,32);
+  // 대각 패턴
+  ctx.fillStyle = pal.mid;
+  for(let i=-32;i<64;i+=8) {
+    ctx.fillRect(i,0,4,32);
+  }
+  ctx.fillStyle = pal.light;
+  for(let i=-32;i<64;i+=8) {
+    ctx.fillRect(i,0,1,32);
+  }
+  // 테두리
+  ctx.fillStyle = pal.dark;
+  ctx.fillRect(0,0,32,2);
+  ctx.fillRect(0,0,2,32);
+  ctx.fillRect(30,0,2,32);
+  ctx.fillRect(0,30,32,2);
+  return c;
+}
+
+function drawBed(pal) {
+  const c = makeCanvas(); const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,32,32);
+  // 프레임
+  ctx.fillStyle = pal.dark;
+  ctx.fillRect(1,1,30,30);
+  ctx.fillStyle = pal.mid;
+  ctx.fillRect(3,3,26,26);
+  // 이불
+  ctx.fillStyle = '#c0d8f0';
+  ctx.fillRect(3,10,26,16);
+  ctx.fillStyle = '#a8c0e0';
+  ctx.fillRect(3,10,26,2);
+  // 이불 줄
+  [9,15,21].forEach(x=>{ ctx.fillStyle='rgba(0,0,0,0.08)'; ctx.fillRect(x,10,1,16); });
+  // 베개
+  ctx.fillStyle = '#f0f0e0';
+  ctx.fillRect(6,4,20,6);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(7,5,8,4);
+  ctx.fillRect(17,5,8,4);
+  return c;
+}
+
+function drawTableFurniture(pal) {
+  const c = makeCanvas(); const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,32,32);
+  // 상판
+  ctx.fillStyle = pal.mid;
+  ctx.fillRect(2,6,28,20);
+  ctx.fillStyle = pal.light;
+  ctx.fillRect(2,6,28,3);
+  ctx.fillRect(2,6,3,20);
+  ctx.fillStyle = pal.dark;
+  ctx.fillRect(27,6,3,20);
+  ctx.fillRect(2,23,28,3);
+  // 다리
+  ctx.fillStyle = pal.dark;
+  [[2,26],[24,26],[2,4],[24,4]].forEach(([x,y])=>ctx.fillRect(x,y,4,4));
+  return c;
+}
+
+function drawChair(pal) {
+  const c = makeCanvas(); const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,32,32);
+  // 등받이
+  ctx.fillStyle = pal.dark;
+  ctx.fillRect(4,2,24,8);
+  ctx.fillStyle = pal.mid;
+  ctx.fillRect(5,3,22,6);
+  // 좌판
+  ctx.fillStyle = pal.mid;
+  ctx.fillRect(4,12,24,14);
+  ctx.fillStyle = pal.light;
+  ctx.fillRect(4,12,24,3);
+  ctx.fillStyle = pal.dark;
+  ctx.fillRect(4,23,24,3);
+  // 다리
+  ctx.fillStyle = pal.dark;
+  [[4,26],[22,26]].forEach(([x,y])=>ctx.fillRect(x,y,4,5));
+  return c;
+}
+
+function drawWorkbench(pal) {
+  const c = makeCanvas(); const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,32,32);
+  // 테이블
+  ctx.fillStyle = pal.mid;
+  ctx.fillRect(1,8,30,18);
+  ctx.fillStyle = pal.light;
+  ctx.fillRect(1,8,30,4);
+  ctx.fillStyle = pal.dark;
+  ctx.fillRect(1,23,30,3);
+  // 다리
+  ctx.fillStyle = pal.dark;
+  [[1,26],[25,26]].forEach(([x,y])=>ctx.fillRect(x,y,4,5));
+  // 공구 (망치)
+  ctx.fillStyle = '#555';
+  ctx.fillRect(5,10,3,10);
+  ctx.fillStyle = '#888';
+  ctx.fillRect(3,10,7,4);
+  // 공구 (렌치 실루엣)
+  ctx.fillStyle = '#666';
+  ctx.fillRect(14,10,2,10);
+  ctx.fillRect(12,10,6,3);
+  ctx.fillRect(12,17,6,3);
+  // 나사/볼트
+  ctx.fillStyle = '#aaa';
+  [[22,11],[25,14],[22,17]].forEach(([x,y])=>{
+    ctx.beginPath(); ctx.arc(x,y,2,0,Math.PI*2); ctx.fill();
+  });
+  return c;
+}
+
+function drawKitchen(pal) {
+  const c = makeCanvas(); const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,32,32);
+  // 조리대
+  ctx.fillStyle = pal.mid;
+  ctx.fillRect(1,10,30,16);
+  ctx.fillStyle = pal.light;
+  ctx.fillRect(1,10,30,3);
+  ctx.fillStyle = pal.dark;
+  ctx.fillRect(1,23,30,3);
+  // 다리
+  ctx.fillStyle = pal.dark;
+  [[1,26],[25,26]].forEach(([x,y])=>ctx.fillRect(x,y,4,5));
+  // 냄비
+  ctx.fillStyle = '#333';
+  ctx.beginPath(); ctx.ellipse(16,16,9,7,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#555';
+  ctx.beginPath(); ctx.ellipse(16,15,8,6,0,0,Math.PI*2); ctx.fill();
+  // 냄비 뚜껑
+  ctx.fillStyle = '#666';
+  ctx.beginPath(); ctx.ellipse(16,12,8,3,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#888';
+  ctx.beginPath(); ctx.ellipse(16,11,4,2,0,0,Math.PI*2); ctx.fill();
+  // 손잡이
+  ctx.fillStyle = '#444';
+  ctx.fillRect(5,15,4,3);
+  ctx.fillRect(23,15,4,3);
+  // 불 (주황)
+  ctx.fillStyle = 'rgba(255,120,0,0.5)';
+  ctx.beginPath(); ctx.ellipse(16,22,7,2,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,60,0,0.4)';
+  ctx.beginPath(); ctx.ellipse(16,22,4,1,0,0,Math.PI*2); ctx.fill();
+  return c;
+}
+
+// ──────────────────────────────────────────────
+// 렌더링
+// ──────────────────────────────────────────────
+addCard('tiles',      drawDirt(),  '흙 (Dirt)');
+addCard('tiles',      drawWater(), '물 (Water)');
+addCard('tiles',      drawRock(),  '암반 (Rock)');
+
+addCard('objects',    drawTree(),  '나무 (Tree)');
+
+addCard('characters', drawCharacter('down'),  '캐릭터 정면');
+addCard('characters', drawCharacter('up'),    '캐릭터 뒤');
+addCard('characters', drawCharacter('left'),  '캐릭터 좌');
+addCard('characters', drawCharacter('right'), '캐릭터 우');
+
+// 아이템 아이콘
+addCard('items', drawStoneItem(),      '암석 (item_stone)');
+addCard('items', drawProcessedStone(), '석재 (item_processed_stone)');
+addCard('items', drawWoodItem(),       '목재 (item_wood)');
+addCard('items', drawFish(),           '물고기 (item_fish)');
+addCard('items', drawCookedFish(),     '구운 생선 (item_cooked_fish)');
+
+// 구조물 — 목재
+addCard('struct-wood', drawWall(PAL.wood, 'grain'), '목재 벽');
+addCard('struct-wood', drawDoor(PAL.wood),           '목재 문');
+addCard('struct-wood', drawRoof(PAL.wood),           '목재 지붕');
+addCard('struct-wood', drawBed(PAL.wood),            '목재 침대');
+addCard('struct-wood', drawTableFurniture(PAL.wood), '목재 식탁');
+addCard('struct-wood', drawChair(PAL.wood),          '목재 의자');
+addCard('struct-wood', drawWorkbench(PAL.wood),      '목재 작업대');
+addCard('struct-wood', drawKitchen(PAL.wood),        '목재 조리대');
+
+// 구조물 — 석재
+addCard('struct-stone', drawWall(PAL.stone, 'brick'), '석재 벽');
+addCard('struct-stone', drawDoor(PAL.stone),           '석재 문');
+addCard('struct-stone', drawRoof(PAL.stone),           '석재 지붕');
+addCard('struct-stone', drawBed(PAL.stone),            '석재 침대');
+addCard('struct-stone', drawTableFurniture(PAL.stone), '석재 식탁');
+addCard('struct-stone', drawChair(PAL.stone),          '석재 의자');
+addCard('struct-stone', drawWorkbench(PAL.stone),      '석재 작업대');
+addCard('struct-stone', drawKitchen(PAL.stone),        '석재 조리대');
+
+// ──────────────────────────────────────────────
+// 동물 스프라이트
+// ──────────────────────────────────────────────
+function drawDeer(pose = 'idle') {
+  const c = makeCanvas(32, 32); const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, 32, 32);
+
+  // 그림자
+  ctx.fillStyle = 'rgba(0,0,0,0.15)';
+  ctx.beginPath(); ctx.ellipse(16, 30, 8, 2, 0, 0, Math.PI*2); ctx.fill();
+
+  const legOffset = pose === 'walk' ? 2 : 0;
+
+  // 다리 (4개)
+  ctx.fillStyle = '#8b5e3c';
+  ctx.fillRect(8,  22, 3, 8 + (legOffset));
+  ctx.fillRect(13, 22, 3, 8 - (legOffset));
+  ctx.fillRect(18, 22, 3, 8 + (legOffset));
+  ctx.fillRect(23, 22, 3, 8 - (legOffset));
+
+  // 몸통
+  ctx.fillStyle = '#c8864a';
+  ctx.beginPath(); ctx.ellipse(17, 20, 10, 7, 0, 0, Math.PI*2); ctx.fill();
+  // 배 (밝은)
+  ctx.fillStyle = '#e0aa78';
+  ctx.beginPath(); ctx.ellipse(17, 22, 7, 4, 0, 0, Math.PI*2); ctx.fill();
+
+  // 목
+  ctx.fillStyle = '#c8864a';
+  ctx.fillRect(8, 12, 5, 10);
+
+  // 머리
+  ctx.fillStyle = '#c8864a';
+  ctx.beginPath(); ctx.ellipse(7, 10, 6, 5, -0.3, 0, Math.PI*2); ctx.fill();
+  // 코
+  ctx.fillStyle = '#8b5e3c';
+  ctx.beginPath(); ctx.ellipse(3, 11, 2, 1.5, 0, 0, Math.PI*2); ctx.fill();
+  // 눈
+  ctx.fillStyle = '#1a1a1a';
+  ctx.beginPath(); ctx.arc(6, 8, 1.5, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(5, 7, 1, 1);
+
+  // 귀
+  ctx.fillStyle = '#c8864a';
+  ctx.beginPath();
+  ctx.moveTo(8, 6); ctx.lineTo(5, 1); ctx.lineTo(11, 4); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#f0a0a0';
+  ctx.beginPath();
+  ctx.moveTo(8, 6); ctx.lineTo(6, 2); ctx.lineTo(10, 5); ctx.closePath(); ctx.fill();
+
+  // 뿔 (수사슴)
+  ctx.strokeStyle = '#6b3f1a'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(9, 5); ctx.lineTo(10, 0); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(10, 2); ctx.lineTo(13, 1); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(10, 3); ctx.lineTo(8, 1); ctx.stroke();
+
+  // 꼬리
+  ctx.fillStyle = '#f0f0e0';
+  ctx.beginPath(); ctx.ellipse(27, 18, 3, 4, 0.3, 0, Math.PI*2); ctx.fill();
+
+  return c;
+}
+
+function drawTiger(pose = 'idle') {
+  const c = makeCanvas(32, 32); const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, 32, 32);
+
+  // 그림자
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.beginPath(); ctx.ellipse(16, 30, 9, 2, 0, 0, Math.PI*2); ctx.fill();
+
+  const legOffset = pose === 'walk' ? 2 : 0;
+  const attackLean = pose === 'attack' ? -3 : 0;
+
+  // 다리
+  ctx.fillStyle = '#c8622a';
+  ctx.fillRect(8,  22, 4, 8 + legOffset);
+  ctx.fillRect(14, 22, 4, 8 - legOffset);
+  ctx.fillRect(19, 22, 4, 8 + legOffset);
+  ctx.fillRect(24, 22, 4, 8 - legOffset);
+
+  // 발
+  ctx.fillStyle = '#e07840';
+  [[8,28],[14,28],[19,28],[24,28]].forEach(([x,y])=>ctx.fillRect(x-1,y,6,3));
+
+  // 몸통
+  ctx.fillStyle = '#e07030';
+  ctx.beginPath(); ctx.ellipse(17+attackLean, 19, 11, 8, 0, 0, Math.PI*2); ctx.fill();
+
+  // 줄무늬 (몸통)
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  [[-3,0],[2,0],[7,0]].forEach(([dx])=>{
+    ctx.beginPath();
+    ctx.moveTo(17+dx+attackLean, 12);
+    ctx.lineTo(15+dx+attackLean, 26);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    ctx.stroke();
+  });
+
+  // 배
+  ctx.fillStyle = '#f0c080';
+  ctx.beginPath(); ctx.ellipse(17+attackLean, 21, 6, 4, 0, 0, Math.PI*2); ctx.fill();
+
+  // 목
+  ctx.fillStyle = '#e07030';
+  ctx.fillRect(6+attackLean, 11, 7, 10);
+  // 목 줄무늬
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(8+attackLean,11); ctx.lineTo(8+attackLean,20); ctx.stroke();
+
+  // 머리
+  ctx.fillStyle = '#e07030';
+  ctx.beginPath(); ctx.ellipse(5+attackLean, 9, 7, 6, -0.2, 0, Math.PI*2); ctx.fill();
+
+  // 줄무늬 (머리)
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1;
+  [[3,4,3,8],[6,3,6,8]].forEach(([x1,y1,x2,y2])=>{
+    ctx.beginPath();
+    ctx.moveTo(x1+attackLean, y1);
+    ctx.lineTo(x2+attackLean, y2);
+    ctx.stroke();
+  });
+
+  // 귀
+  ctx.fillStyle = '#e07030';
+  ctx.beginPath();
+  ctx.moveTo(2+attackLean,5); ctx.lineTo(0+attackLean,1); ctx.lineTo(5+attackLean,3); ctx.closePath(); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(8+attackLean,4); ctx.lineTo(8+attackLean,0); ctx.lineTo(12+attackLean,3); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#f0a080';
+  ctx.beginPath();
+  ctx.moveTo(3+attackLean,5); ctx.lineTo(1+attackLean,2); ctx.lineTo(5+attackLean,3); ctx.closePath(); ctx.fill();
+
+  // 눈 (공격 시 더 부릅뜸)
+  ctx.fillStyle = pose==='attack' ? '#ff4400' : '#f0a000';
+  ctx.beginPath(); ctx.ellipse(3+attackLean, 8, 2, 2, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#1a1a1a';
+  ctx.beginPath(); ctx.ellipse(3+attackLean, 8, 1, 1.5, 0, 0, Math.PI*2); ctx.fill();
+
+  // 코
+  ctx.fillStyle = '#8b2020';
+  ctx.beginPath(); ctx.ellipse(0+attackLean, 10, 2, 1.5, 0, 0, Math.PI*2); ctx.fill();
+
+  // 수염
+  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.8;
+  [[-4,9],[-4,11],[-4,10]].forEach(([dx,dy],i)=>{
+    ctx.beginPath();
+    ctx.moveTo(0+attackLean, dy);
+    ctx.lineTo(-6+attackLean, dy + (i-1));
+    ctx.stroke();
+  });
+
+  // 꼬리
+  ctx.strokeStyle = '#e07030'; ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(27,20); ctx.quadraticCurveTo(32,14,30,10); ctx.stroke();
+  // 꼬리 줄무늬
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(29,16); ctx.lineTo(31,13); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(30,12); ctx.lineTo(30,10); ctx.stroke();
+
+  return c;
+}
+
+// ──────────────────────────────────────────────
+// 사냥 드롭 아이템
+// ──────────────────────────────────────────────
+function drawRawMeat() {
+  const c = makeCanvas(); const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,32,32);
+  // 고기 덩어리
+  ctx.fillStyle = '#c04040';
+  ctx.beginPath(); ctx.ellipse(16, 18, 10, 8, 0.2, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#e05050';
+  ctx.beginPath(); ctx.ellipse(14, 16, 8, 6, 0.2, 0, Math.PI*2); ctx.fill();
+  // 지방층
+  ctx.fillStyle = '#f0d080';
+  ctx.beginPath(); ctx.ellipse(18, 14, 5, 3, -0.3, 0, Math.PI*2); ctx.fill();
+  // 뼈
+  ctx.fillStyle = '#f0f0e0';
+  ctx.fillRect(20, 10, 3, 16); ctx.fillRect(18, 10, 7, 3); ctx.fillRect(18, 24, 7, 3);
+  return c;
+}
+
+function drawHide() {
+  const c = makeCanvas(); const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,32,32);
+  // 가죽 펼쳐진 형태
+  ctx.fillStyle = '#c8864a';
+  ctx.beginPath();
+  ctx.moveTo(8,4); ctx.lineTo(24,4); ctx.lineTo(28,12);
+  ctx.lineTo(26,24); ctx.lineTo(16,28); ctx.lineTo(6,24);
+  ctx.lineTo(4,12); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#e0aa78';
+  ctx.beginPath();
+  ctx.moveTo(10,7); ctx.lineTo(22,7); ctx.lineTo(25,14);
+  ctx.lineTo(23,22); ctx.lineTo(16,25); ctx.lineTo(9,22);
+  ctx.lineTo(7,14); ctx.closePath(); ctx.fill();
+  // 질감
+  ctx.strokeStyle = 'rgba(0,0,0,0.1)'; ctx.lineWidth = 1;
+  [[10,10,22,10],[10,15,22,15],[10,20,22,20]].forEach(([x1,y1,x2,y2])=>{
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  });
+  return c;
+}
+
+function drawTigerFang() {
+  const c = makeCanvas(); const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,32,32);
+  // 이빨 (곡선)
+  ctx.fillStyle = '#f5f0e0';
+  ctx.beginPath();
+  ctx.moveTo(14,4); ctx.quadraticCurveTo(8,10,12,26);
+  ctx.lineTo(16,28); ctx.quadraticCurveTo(22,14,18,4); ctx.closePath(); ctx.fill();
+  // 음영
+  ctx.fillStyle = '#d8d0b0';
+  ctx.beginPath();
+  ctx.moveTo(18,4); ctx.quadraticCurveTo(22,14,16,28);
+  ctx.lineTo(17,28); ctx.quadraticCurveTo(23,14,19,4); ctx.closePath(); ctx.fill();
+  // 뿌리 부분
+  ctx.fillStyle = '#d4a060';
+  ctx.fillRect(12,4,8,5);
+  ctx.fillStyle = '#c8884a';
+  ctx.fillRect(12,4,8,2);
+  return c;
+}
+
+function drawCookedMeat() {
+  const c = makeCanvas(); const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,32,32);
+  // 접시
+  ctx.fillStyle = '#e8e8e8';
+  ctx.beginPath(); ctx.ellipse(16, 22, 13, 5, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.ellipse(16, 21, 11, 4, 0, 0, Math.PI*2); ctx.fill();
+  // 구운 고기
+  ctx.fillStyle = '#6b2a0a';
+  ctx.beginPath(); ctx.ellipse(16, 19, 9, 6, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#8b3a1a';
+  ctx.beginPath(); ctx.ellipse(14, 18, 7, 5, 0, 0, Math.PI*2); ctx.fill();
+  // 구운 자국
+  ctx.strokeStyle = '#3a1005'; ctx.lineWidth = 1.5;
+  [[10,17,22,17],[11,20,21,20]].forEach(([x1,y1,x2,y2])=>{
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  });
+  // 뼈
+  ctx.fillStyle = '#f0f0e0';
+  ctx.fillRect(21,13,2,12); ctx.fillRect(19,13,6,2); ctx.fillRect(19,23,6,2);
+  // 김
+  ctx.fillStyle = 'rgba(200,200,200,0.4)';
+  ctx.beginPath(); ctx.ellipse(12,12,2,4,0.3,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(18,10,2,5,-0.2,0,Math.PI*2); ctx.fill();
+  return c;
+}
+
+// ──────────────────────────────────────────────
+// 무기 스프라이트
+// ──────────────────────────────────────────────
+function drawBow() {
+  const c = makeCanvas(); const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,32,32);
+
+  // 활대 (곡선)
+  ctx.strokeStyle = '#8b5e2a'; ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(8, 4); ctx.quadraticCurveTo(20, 16, 8, 28); ctx.stroke();
+  // 활대 하이라이트
+  ctx.strokeStyle = '#c8884a'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(7, 4); ctx.quadraticCurveTo(19, 16, 7, 28); ctx.stroke();
+
+  // 시위
+  ctx.strokeStyle = '#d4c08a'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(8, 4); ctx.lineTo(8, 28); ctx.stroke();
+
+  // 화살 (시위에 걸린 상태)
+  ctx.strokeStyle = '#c8884a'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(8, 16); ctx.lineTo(28, 16); ctx.stroke();
+  // 화살촉
+  ctx.fillStyle = '#888';
+  ctx.beginPath();
+  ctx.moveTo(28,16); ctx.lineTo(24,13); ctx.lineTo(24,19); ctx.closePath(); ctx.fill();
+  // 깃
+  ctx.fillStyle = '#e0e0e0';
+  ctx.beginPath();
+  ctx.moveTo(8,16); ctx.lineTo(12,13); ctx.lineTo(11,16); ctx.closePath(); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(8,16); ctx.lineTo(12,19); ctx.lineTo(11,16); ctx.closePath(); ctx.fill();
+
+  return c;
+}
+
+function drawSword(material = 'wood') {
+  const c = makeCanvas(); const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,32,32);
+
+  const isStone = material === 'stone';
+  const bladeColor = isStone ? '#b0b0b0' : '#c8884a';
+  const bladeHighlight = isStone ? '#d8d8d8' : '#e0aa6a';
+  const bladeDark = isStone ? '#707070' : '#8b5e2a';
+  const handleColor = '#6b3f1a';
+
+  // 칼날 (대각선)
+  ctx.save();
+  ctx.translate(16, 16); ctx.rotate(Math.PI / 4);
+
+  // 칼날 몸체
+  ctx.fillStyle = bladeColor;
+  ctx.fillRect(-3, -14, 6, 20);
+  // 칼날 하이라이트
+  ctx.fillStyle = bladeHighlight;
+  ctx.fillRect(-3, -14, 2, 20);
+  // 칼날 엣지
+  ctx.fillStyle = bladeDark;
+  ctx.fillRect(2, -14, 1, 20);
+
+  // 날 끝 (뾰족)
+  ctx.fillStyle = bladeColor;
+  ctx.beginPath();
+  ctx.moveTo(-3,-14); ctx.lineTo(3,-14); ctx.lineTo(0,-20); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = bladeHighlight;
+  ctx.beginPath();
+  ctx.moveTo(-3,-14); ctx.lineTo(0,-14); ctx.lineTo(0,-20); ctx.closePath(); ctx.fill();
+
+  // 가드 (코등이)
+  ctx.fillStyle = isStone ? '#909090' : '#a0622a';
+  ctx.fillRect(-6, 5, 12, 3);
+  ctx.fillStyle = isStone ? '#b8b8b8' : '#c8884a';
+  ctx.fillRect(-6, 5, 12, 1);
+
+  // 손잡이
+  ctx.fillStyle = handleColor;
+  ctx.fillRect(-2, 8, 4, 10);
+  ctx.fillStyle = '#8a5230';
+  ctx.fillRect(-2, 8, 1, 10);
+  // 감은 끈
+  [9,11,13,15].forEach(y => {
+    ctx.fillStyle = '#d4a060';
+    ctx.fillRect(-2, y, 4, 1);
+  });
+
+  // 손잡이 끝 (폼멜)
+  ctx.fillStyle = isStone ? '#808080' : '#8b5e2a';
+  ctx.beginPath(); ctx.arc(0, 19, 3, 0, Math.PI*2); ctx.fill();
+
+  ctx.restore();
+  return c;
+}
+
+function drawArrow() {
+  const c = makeCanvas(16, 6); const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,16,6);
+  // 화살대
+  ctx.fillStyle = '#c8884a';
+  ctx.fillRect(3, 2, 10, 2);
+  // 화살촉
+  ctx.fillStyle = '#909090';
+  ctx.beginPath();
+  ctx.moveTo(13,3); ctx.lineTo(16,1); ctx.lineTo(16,5); ctx.closePath(); ctx.fill();
+  // 깃
+  ctx.fillStyle = '#f0f0f0';
+  ctx.beginPath();
+  ctx.moveTo(3,3); ctx.lineTo(0,1); ctx.lineTo(2,3); ctx.closePath(); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(3,3); ctx.lineTo(0,5); ctx.lineTo(2,3); ctx.closePath(); ctx.fill();
+  return c;
+}
+
+// ──────────────────────────────────────────────
+// 동물 / 아이템 렌더링
+// ──────────────────────────────────────────────
+addCard('animals', drawDeer('idle'),    '사슴 정지 (animal_deer_idle)');
+addCard('animals', drawDeer('walk'),    '사슴 이동 (animal_deer_walk)');
+addCard('animals', drawTiger('idle'),   '호랑이 정지 (animal_tiger_idle)');
+addCard('animals', drawTiger('walk'),   '호랑이 이동 (animal_tiger_walk)');
+addCard('animals', drawTiger('attack'), '호랑이 공격 (animal_tiger_attack)');
+
+addCard('hunt-items', drawRawMeat(),    '고기 (item_raw_meat)');
+addCard('hunt-items', drawHide(),       '가죽 (item_hide)');
+addCard('hunt-items', drawTigerFang(),  '호랑이 이빨 (item_tiger_fang)');
+addCard('hunt-items', drawCookedMeat(), '구운 고기 (item_cooked_meat)');
+
+// 무기
+addCard('weapons', drawBow(),           '활 (item_bow)');
+addCard('weapons', drawSword('wood'),   '나무 칼 (item_sword_wood)');
+addCard('weapons', drawSword('stone'),  '석재 칼 (item_sword_stone)');
+addCard('weapons', drawArrow(),         '화살 (projectile_arrow)');
+</script>
+</body>
+</html>
