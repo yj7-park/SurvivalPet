@@ -20,6 +20,7 @@ import { ShelfStorage } from '../systems/ShelfStorage';
 import { ShelfUI } from '../systems/ShelfUI';
 import { WeatherSystem } from '../systems/WeatherSystem';
 import { EffectSystem } from '../systems/EffectSystem';
+import { InvasionSystem } from '../systems/InvasionSystem';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -62,6 +63,7 @@ export class GameScene extends Phaser.Scene {
   private interaction!: InteractionSystem;
   private buildSystem!: BuildSystem;
   private effects!: EffectSystem;
+  private invasion!: InvasionSystem;
   private buildPanel: HTMLDivElement | null = null;
   private frenzyDamageTimer = 0;
   private commandQueue!: CommandQueue;
@@ -125,6 +127,7 @@ export class GameScene extends Phaser.Scene {
     this.buildSystem = new BuildSystem();
     this.buildSystem.init(this);
     this.effects = new EffectSystem(this);
+    this.invasion = new InvasionSystem(this, this.gameTime, this.seed, playerId);
     this.commandQueue = new CommandQueue();
 
     // 건설 완료 시 큐 진행
@@ -376,6 +379,7 @@ export class GameScene extends Phaser.Scene {
     this.gameTime.update(delta);
     this.survival.update(delta);
     this.weather.update(delta);
+    this.invasion.update(delta);
     this.shelfUI.updatePlayerPosition(this.player.sprite.x, this.player.sprite.y);
     this.buildSystem.update(delta, this.survival, this.player.sprite.x, this.player.sprite.y);
 

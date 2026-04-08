@@ -215,6 +215,63 @@ function drawCharacter(dir: 'down' | 'up' | 'left' | 'right'): HTMLCanvasElement
   return c;
 }
 
+function drawEnemy(): HTMLCanvasElement {
+  const c = makeCanvas(32, 32);
+  const ctx = c.getContext('2d')!;
+  ctx.clearRect(0, 0, 32, 32);
+
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.beginPath();
+  ctx.ellipse(16, 30, 7, 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 적군: 붉은 계열 색상 (플레이어와 유사하지만 더 진한 빨강)
+  ctx.fillStyle = '#2a3a4a';  // 어두운 회색-파랑 (바지)
+  ctx.fillRect(10, 22, 5, 8);
+  ctx.fillRect(17, 22, 5, 8);
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(9, 28, 6, 3);
+  ctx.fillRect(17, 28, 6, 3);
+
+  ctx.fillStyle = '#8b0000';  // 진한 빨강 (상의)
+  ctx.fillRect(9, 13, 14, 11);
+  ctx.fillStyle = '#cc2222';
+  ctx.fillRect(9, 13, 4, 11);
+
+  ctx.fillStyle = '#8b0000';
+  ctx.fillRect(5, 13, 4, 9);
+  ctx.fillRect(23, 13, 4, 9);
+  ctx.fillStyle = '#f5c8a0';  // 피부색 (동일)
+  ctx.fillRect(5, 21, 4, 3);
+  ctx.fillRect(23, 21, 4, 3);
+
+  ctx.fillStyle = '#f5c8a0';
+  ctx.fillRect(13, 10, 6, 4);
+  ctx.fillRect(9, 3, 14, 12);
+  ctx.fillStyle = '#e8b888';
+  ctx.fillRect(9, 3, 1, 1);
+  ctx.fillRect(22, 3, 1, 1);
+  ctx.fillRect(9, 14, 1, 1);
+  ctx.fillRect(22, 14, 1, 1);
+
+  // 얼굴
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(11, 7, 3, 2);
+  ctx.fillRect(18, 7, 3, 2);
+  ctx.fillStyle = '#ff6666';  // 붉은 눈빛
+  ctx.fillRect(11, 7, 1, 1);
+  ctx.fillRect(18, 7, 1, 1);
+  ctx.fillStyle = '#aa3333';
+  ctx.fillRect(13, 11, 6, 1);
+
+  ctx.fillStyle = '#3a2010';
+  ctx.fillRect(9, 3, 14, 3);
+  ctx.fillRect(9, 3, 2, 5);
+  ctx.fillRect(21, 3, 2, 5);
+
+  return c;
+}
+
 // ── Item sprites ──────────────────────────────────────────────────────────────
 
 function drawStoneItem(): HTMLCanvasElement {
@@ -877,6 +934,9 @@ export function registerTextures(scene: Phaser.Scene): void {
   scene.textures.addCanvas('animal_tiger_idle',     drawTiger('idle'));
   scene.textures.addCanvas('animal_tiger_walk',     drawTiger('walk'));
   scene.textures.addCanvas('animal_tiger_attack',   drawTiger('attack'));
+
+  // Enemies
+  scene.textures.addCanvas('enemy_idle',            drawEnemy());
 
   // Structures (wood)
   scene.textures.addCanvas('struct_wall_wood',      drawWall(PAL.wood, true));
