@@ -56,11 +56,16 @@ export class BuildSystem {
   private buildTotalMs = 0;
   private buildProgressBg!: Phaser.GameObjects.Rectangle;
   private buildProgressFill!: Phaser.GameObjects.Rectangle;
+  private buildCompleteCallback: (() => void) | null = null;
 
   init(scene: Phaser.Scene): void {
     this.scene = scene;
     this.buildProgressBg   = scene.add.rectangle(0, 0, 32, 5, 0x333333).setDepth(5).setVisible(false).setOrigin(0.5);
     this.buildProgressFill = scene.add.rectangle(0, 0, 32, 5, 0xffaa00).setDepth(6).setVisible(false).setOrigin(0.5);
+  }
+
+  setBuildCompleteCallback(cb: () => void): void {
+    this.buildCompleteCallback = cb;
   }
 
   tileKey(tx: number, ty: number): string { return `${tx},${ty}`; }
@@ -160,6 +165,7 @@ export class BuildSystem {
     this.buildTarget = null;
     this.buildProgressBg.setVisible(false);
     this.buildProgressFill.setVisible(false);
+    this.buildCompleteCallback?.();
   }
 
   isBuildInProgress(): boolean { return this.buildTarget !== null; }

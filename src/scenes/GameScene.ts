@@ -16,6 +16,8 @@ import { InventoryUI } from '../systems/InventoryUI';
 import { WEAPONS } from '../config/weapons';
 import { CommandQueue, Command } from '../systems/CommandQueue';
 import { CommandQueueUI } from '../systems/CommandQueueUI';
+import { ShelfStorage } from '../systems/ShelfStorage';
+import { ShelfUI } from '../systems/ShelfUI';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -62,6 +64,10 @@ export class GameScene extends Phaser.Scene {
   private commandQueueUI!: CommandQueueUI;
 
   private workbenchPanel: HTMLDivElement | null = null;
+
+  // Shelf storage
+  private shelfStorages = new Map<string, ShelfStorage>();
+  private shelfUI!: ShelfUI;
 
   // 건설 자동이동
   private buildAutoMoveTarget: { worldX: number; worldY: number } | null = null;
@@ -114,7 +120,14 @@ export class GameScene extends Phaser.Scene {
     this.buildSystem = new BuildSystem();
     this.buildSystem.init(this);
     this.commandQueue = new CommandQueue();
+
+    // 건설 완료 시 큐 진행
+    this.buildSystem.setBuildCompleteCallback(() => {
+      this.commandQueue.completeCommand();
+      this.processNextQueueCommand();
+    });
     this.commandQueueUI = new CommandQueueUI(this.commandQueue);
+    this.shelfUI = new ShelfUI();
 
     const playerRng = new SeededRandom(`${this.seed}_drops_${playerId}`);
     this.interaction = new InteractionSystem(
@@ -136,6 +149,12 @@ export class GameScene extends Phaser.Scene {
     this.combat = new CombatSystem(
       this, this.player, this.charStats, this.survival, this.inventory, this.animalMgr, playerRng2,
     );
+
+    // 전투 종료 시 큐 진행
+    this.combat.setCombatEndCallback(() => {
+      this.commandQueue.completeCommand();
+      this.processNextQueueCommand();
+    });
 
     // Pointer events — use ptr.worldX/worldY (Phaser applies camera matrix correctly)
     this.input.on('pointermove', (ptr: Phaser.Input.Pointer) => {
@@ -173,7 +192,23 @@ export class GameScene extends Phaser.Scene {
           const twx = tx * TILE_SIZE + TILE_SIZE / 2;
           const twy = ty * TILE_SIZE + TILE_SIZE / 2;
           const dist = Math.hypot(this.player.sprite.x - twx, this.player.sprite.y - twy);
-          if (dist <= BUILD_RANGE) {
+
+          if (isShiftHeld) {
+            // 큐에 건설 명령 추가
+            const buildCmd: Command = {
+              id: '',
+              type: 'build',
+              targetX: tx,
+              targetY: ty,
+              data: {
+                defName: this.buildSystem.activeDef.name,
+                material: this.buildSystem.activeMaterial,
+              },
+            };
+            if (!this.commandQueue.add(buildCmd)) {
+              console.warn('큐가 가득 찼습니다');
+            }
+          } else if (dist <= BUILD_RANGE) {
             this.buildSystem.startBuild(
               this.buildSystem.activeDef.name,
               this.buildSystem.activeMaterial,
@@ -224,9 +259,26 @@ export class GameScene extends Phaser.Scene {
         return;
       }
       if (clickedStructure?.defName === 'shelf') {
-        // Shelf interaction - open storage panel
-        // TODO: implement shelf UI
-        console.log('Shelf interaction not yet implemented');
+        const shelfId = clickedStructure.id;
+        let shelfStorage = this.shelfStorages.get(shelfId);
+        if (!shelfStorage) {
+          shelfStorage = new ShelfStorage();
+          this.shelfStorages.set(shelfId, shelfStorage);
+        }
+
+        const shelfWx = clickedStructure.tileX * TILE_SIZE + TILE_SIZE / 2;
+        const shelfWy = clickedStructure.tileY * TILE_SIZE + TILE_SIZE / 2;
+
+        this.shelfUI.open(
+          this,
+          shelfId,
+          shelfStorage,
+          this.inventory,
+          this.player.sprite.x,
+          this.player.sprite.y,
+          shelfWx,
+          shelfWy,
+        );
         return;
       }
 
@@ -316,6 +368,7 @@ export class GameScene extends Phaser.Scene {
   update(time: number, delta: number) {
     this.gameTime.update(delta);
     this.survival.update(delta);
+    this.shelfUI.updatePlayerPosition(this.player.sprite.x, this.player.sprite.y);
     this.buildSystem.update(delta, this.survival, this.player.sprite.x, this.player.sprite.y);
 
     // Frenzy damages structures once per second
@@ -419,6 +472,9 @@ export class GameScene extends Phaser.Scene {
 
     this.player.update(delta, suppressKeys);
     this.interaction.update(delta);
+
+    // ── 깊이 정렬: Y 좌표 기반으로 캐릭터가 나무 뒤/앞에 표시되도록 ───
+    this.player.sprite.setDepth(Math.floor(this.player.sprite.y / 10));
 
     // ── 동물 AI 업데이트 + 피격 처리 ────────────────────────
     this.animalMgr.update(delta, this.player.sprite.x, this.player.sprite.y, (dmg) => {
@@ -526,7 +582,28 @@ export class GameScene extends Phaser.Scene {
         }
         break;
       }
-      // TODO: add other command types (build, craft, cook, sleep)
+      case 'build': {
+        if (nextCmd.targetX !== undefined && nextCmd.targetY !== undefined && nextCmd.data) {
+          const defName = nextCmd.data.defName as string;
+          const material = nextCmd.data.material as 'wood' | 'stone';
+          const tx = nextCmd.targetX;
+          const ty = nextCmd.targetY;
+          const twx = tx * TILE_SIZE + TILE_SIZE / 2;
+          const twy = ty * TILE_SIZE + TILE_SIZE / 2;
+          const dist = Math.hypot(this.player.sprite.x - twx, this.player.sprite.y - twy);
+
+          if (dist <= BUILD_RANGE) {
+            // 충분히 가깝다면 즉시 건설 시작
+            this.buildSystem.startBuild(defName, material, tx, ty, this.charStats, this.inventory);
+          } else {
+            // 자동이동 후 건설
+            this.buildAutoMoveTarget = { worldX: twx, worldY: twy };
+            this.pendingBuild = { defName, material, tileX: tx, tileY: ty };
+          }
+        }
+        break;
+      }
+      // TODO: add other command types (craft, cook, sleep)
     }
   }
 

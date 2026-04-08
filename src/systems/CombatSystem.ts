@@ -18,6 +18,7 @@ export class CombatSystem {
   private projectiles: Phaser.GameObjects.Rectangle[] = [];
   private damageTexts: { text: Phaser.GameObjects.Text; vy: number; life: number }[] = [];
   private hitFlashCallback: (() => void) | null = null;
+  private combatEndCallback: (() => void) | null = null;
 
   constructor(
     private scene: Phaser.Scene,
@@ -49,9 +50,14 @@ export class CombatSystem {
   }
 
   unlock(): void {
+    const wasTargeted = this.lockedTarget !== null && this.lockedTarget.isDead;
     this.lockedTarget = null;
     this._tracking = false;
     this.lockCircle.setVisible(false);
+    // 적이 죽었으면 전투 종료 콜백 호출 (큐 진행)
+    if (wasTargeted) {
+      this.combatEndCallback?.();
+    }
   }
 
   /** 이동키 입력 시: 추적만 해제하고 락온은 유지 */
@@ -62,6 +68,7 @@ export class CombatSystem {
   getLockedTarget(): Animal | null { return this.lockedTarget; }
 
   setHitFlashCallback(cb: () => void): void { this.hitFlashCallback = cb; }
+  setCombatEndCallback(cb: () => void): void { this.combatEndCallback = cb; }
 
   /** Called when player takes damage from an animal */
   onPlayerHit(dmg: number): void {

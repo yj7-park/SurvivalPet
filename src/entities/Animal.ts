@@ -30,7 +30,7 @@ export interface AnimalConfig {
 
 export const DEER_CONFIG: AnimalConfig = {
   type: 'deer', maxHp: 40,
-  wanderSpeed: 60, actionSpeed: 140,
+  wanderSpeed: 75, actionSpeed: 170,
   attackDamage: 0, attackCooldownMs: 99999, attackRangePx: 0,
   homeRadiusTiles: 5, giveUpTiles: 999,
   drops: [
