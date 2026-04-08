@@ -195,6 +195,8 @@ export class GameScene extends Phaser.Scene {
       // Check for animal click — lock on via CombatSystem
       const animal = this.animalMgr.getHovered(wx, wy);
       if (animal) {
+        this.spawnClickFeedback(animal.x, animal.y, '#ff4444');
+
         if (isShiftHeld) {
           // Add attack command to queue
           const cmd: Command = { id: '', type: 'attack', targetId: animal.id };
@@ -222,6 +224,10 @@ export class GameScene extends Phaser.Scene {
       if (tx >= 0 && tx < 100 && ty >= 0 && ty < 100) {
         const tileType = this.currentTiles[ty]?.[tx];
         if (tileType === TileType.Dirt) {
+          const targetWx = tx * TILE_SIZE + TILE_SIZE / 2;
+          const targetWy = ty * TILE_SIZE + TILE_SIZE / 2;
+          this.spawnClickFeedback(targetWx, targetWy, '#ffffff');
+
           if (isShiftHeld) {
             // Add move command to queue
             const moveCmd: Command = { id: '', type: 'move', targetX: tx, targetY: ty };
@@ -238,6 +244,16 @@ export class GameScene extends Phaser.Scene {
       }
 
       // Tile interaction - pass shift flag to interaction system
+      const tx2 = Math.floor(wx / TILE_SIZE);
+      const ty2 = Math.floor(wy / TILE_SIZE);
+      if (tx2 >= 0 && tx2 < 100 && ty2 >= 0 && ty2 < 100) {
+        const tileType2 = this.currentTiles[ty2]?.[tx2];
+        if (tileType2 === TileType.Tree || tileType2 === TileType.Rock || tileType2 === TileType.Water) {
+          const feedbackWx = tx2 * TILE_SIZE + TILE_SIZE / 2;
+          const feedbackWy = ty2 * TILE_SIZE + TILE_SIZE / 2;
+          this.spawnClickFeedback(feedbackWx, feedbackWy, '#ffdd00');
+        }
+      }
       this.interaction.onPointerDown(wx, wy, isShiftHeld, this.commandQueue);
     });
 
@@ -420,12 +436,30 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
+  spawnClickFeedback(wx: number, wy: number, color: string): void {
+    const ring = this.add.circle(wx, wy, 4, undefined);
+    const colorNum = parseInt(color.slice(1), 16);
+    ring.setStrokeStyle(2, colorNum).setFillStyle(undefined, 0);
+    ring.setDepth(2);
+
+    this.tweens.add({
+      targets: ring,
+      scaleX: 1.0,
+      scaleY: 1.0,
+      alpha: 0,
+      duration: 500,
+      ease: 'Quad.easeOut',
+      onComplete: () => ring.destroy(),
+    });
+  }
+
   private executeImmediateMove(cmd: Command): void {
     if (cmd.targetX !== undefined && cmd.targetY !== undefined) {
       const wx = cmd.targetX * TILE_SIZE + TILE_SIZE / 2;
       const wy = cmd.targetY * TILE_SIZE + TILE_SIZE / 2;
       this.moveTarget = { worldX: wx, worldY: wy };
       this.moveTargetCommand = null;
+      this.spawnClickFeedback(wx, wy, '#ffffff');
     }
   }
 
