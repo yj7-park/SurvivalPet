@@ -254,6 +254,12 @@ export class PauseMenu {
       this.saveSystem.saveSettings(settings);
       this.onSettingsChanged?.({ sfxVolume: v });
     }));
+    const shakeVal = settings.screenShake ?? 1.0;
+    body.appendChild(mkSlider('📳 화면 흔들림', shakeVal, (v) => {
+      settings.screenShake = v;
+      this.saveSystem.saveSettings(settings);
+      this.onSettingsChanged?.({ screenShake: v });
+    }));
     const hudSettings = this.getHudSettings?.() ?? { showFPS: false, showCoords: false };
     body.appendChild(mkToggle('FPS 표시', hudSettings.showFPS, (v) => {
       this.saveSystem.saveSettings({ ...settings, showFPS: v });

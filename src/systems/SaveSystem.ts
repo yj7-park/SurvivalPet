@@ -91,6 +91,7 @@ export interface SettingsSaveData {
   masterVolume: number;
   sfxVolume: number;
   bgmVolume: number;
+  screenShake: number;
 }
 
 export interface SaveData {
@@ -181,6 +182,7 @@ export class SaveSystem {
       masterVolume: 0.7,
       sfxVolume: 0.8,
       bgmVolume: 0.4,
+      screenShake: 1.0,
     };
     try {
       const raw = localStorage.getItem('sv_settings');
