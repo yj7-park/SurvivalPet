@@ -33,6 +33,8 @@ import { DropSystem } from '../systems/DropSystem';
 import { SaveSystem, SaveData } from '../systems/SaveSystem';
 import { PauseMenu } from '../ui/PauseMenu';
 import { ActionSystem } from '../systems/ActionSystem';
+import { DurabilitySystem } from '../systems/DurabilitySystem';
+import { HoverTooltip } from '../ui/HoverTooltip';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -123,6 +125,12 @@ export class GameScene extends Phaser.Scene {
 
   // 채굴된 암반 추적
   private clearedRocks: { tx: number; ty: number }[] = [];
+
+  // 내구도 & 수리
+  private durabilitySystem = new DurabilitySystem();
+  private hoverTooltip!: HoverTooltip;
+  // 수리 진행 중 억제
+  private isRepairing = false;
 
   // 행복 수치 & 광란
   private actionSystem = new ActionSystem();
@@ -228,6 +236,25 @@ export class GameScene extends Phaser.Scene {
     this.miniMap = new MiniMapPanel(
       () => ({ mapX: this.mapX, mapY: this.mapY }),
       () => this.visitedMaps,
+    );
+
+    // 내구도 호버 툴팁 & 수리
+    this.hoverTooltip = new HoverTooltip(
+      () => this.inventory,
+      () => this.charStats,
+    );
+    this.hoverTooltip.setRepairCallbacks(
+      () => { this.isRepairing = true; },
+      (struct, full) => {
+        const result = this.durabilitySystem.repair(struct, full, this.inventory, this.charStats);
+        this.isRepairing = false;
+        if (result.ok) {
+          this.showNotificationPopup(`수리 완료 (+${result.recovered})`, '#aaffaa');
+          this.proficiency.addXP('building', 8);
+        } else if (result.reason === 'insufficient_materials') {
+          this.showNotificationPopup('재료가 부족합니다', '#ff8844');
+        }
+      },
     );
 
     // 광란 오라 (플레이어 주변 빨간 원)
@@ -340,6 +367,18 @@ export class GameScene extends Phaser.Scene {
         const canPlace = this.buildSystem.canPlace(this.buildSystem.activeDef.name, tx, ty, this.currentTiles);
         this.buildSystem.updatePreview(tx, ty, canPlace);
       }
+
+      // 구조물 호버 시 내구도 툴팁
+      if (!this.buildSystem.activeDef && !this.hoverTooltip.isRepairing()) {
+        const tx = Math.floor(wx / TILE_SIZE);
+        const ty = Math.floor(wy / TILE_SIZE);
+        const hStruct = this.buildSystem.getAt(tx, ty);
+        if (hStruct) {
+          this.hoverTooltip.showStructTooltip(hStruct, sx, sy);
+        } else {
+          this.hoverTooltip.hideTooltip();
+        }
+      }
     });
 
     this.input.on('pointerdown', (ptr: Phaser.Input.Pointer) => {
@@ -351,15 +390,28 @@ export class GameScene extends Phaser.Scene {
         this.buildSystem.exitBuildMode();
         this.closeBuildPanel();
         this.combat.unlock();
-        // 완공 구조물 또는 중단된 건축 위 우클릭 → 컨텍스트 팝업
+        // 완공 구조물 또는 중단된 건축 위 우클릭 → 수리 패널 or 컨텍스트 팝업
         const rtx = Math.floor(wx / TILE_SIZE);
         const rty = Math.floor(wy / TILE_SIZE);
         const rStruct = this.buildSystem.getAt(rtx, rty);
         const rPartial = this.buildSystem.getPartialAt(rtx, rty);
-        if (rStruct || rPartial) {
+        if (rStruct && !rPartial) {
+          const dist = Math.hypot(
+            this.player.sprite.x - (rtx * TILE_SIZE + TILE_SIZE / 2),
+            this.player.sprite.y - (rty * TILE_SIZE + TILE_SIZE / 2),
+          );
+          if (dist <= BUILD_RANGE * 2) {
+            this.hoverTooltip.hideTooltip();
+            this.hoverTooltip.openRepairPanel(rStruct);
+          } else {
+            const sx = (ptr.event as MouseEvent).clientX ?? ptr.x;
+            const sy = (ptr.event as MouseEvent).clientY ?? ptr.y;
+            this.showBuildContextMenu(sx, sy, rtx, rty, false);
+          }
+        } else if (rPartial) {
           const sx = (ptr.event as MouseEvent).clientX ?? ptr.x;
           const sy = (ptr.event as MouseEvent).clientY ?? ptr.y;
-          this.showBuildContextMenu(sx, sy, rtx, rty, !!rPartial);
+          this.showBuildContextMenu(sx, sy, rtx, rty, true);
         }
         return;
       }
@@ -694,6 +746,21 @@ export class GameScene extends Phaser.Scene {
     this.shelfUI.updatePlayerPosition(this.player.sprite.x, this.player.sprite.y);
     this.buildSystem.update(delta, this.survival, this.player.sprite.x, this.player.sprite.y);
 
+    // 내구도 자연 노후화 + 수리 진행
+    const decayDestroyed = this.durabilitySystem.update(delta, this.buildSystem.getAllStructures(), this.getRoofedTiles());
+    for (const tileKey of decayDestroyed) {
+      const [dtx, dty] = tileKey.split(',').map(Number);
+      this.destroyStructure(dtx, dty, '노후화로 구조물이 무너졌습니다');
+    }
+    if (this.hoverTooltip.updateRepair(delta)) {
+      // repair completed — already handled via callback
+    }
+    // 수리 중 이동하면 취소
+    if (this.player.isMovingByKeyboard() && this.isRepairing) {
+      this.hoverTooltip.cancelRepairOnMove();
+      this.isRepairing = false;
+    }
+
     // 연구 업데이트 및 작업대 이탈 감지
     const completedResearch = this.research.update(delta);
     if (completedResearch) {
@@ -871,7 +938,8 @@ export class GameScene extends Phaser.Scene {
       || autoTarget !== null
       || (lockTarget !== null && this.combat.tracking)
       || this.buildAutoMoveTarget !== null
-      || this.mapTransition?.isTransitioning;
+      || this.mapTransition?.isTransitioning
+      || this.isRepairing;
 
     this.player.update(delta, suppressKeys);
     this.interaction.update(delta);
@@ -1024,6 +1092,7 @@ export class GameScene extends Phaser.Scene {
     this.scene.stop('UIScene');
     this.playerListPanel?.destroy();
     this.miniMap?.destroy();
+    this.hoverTooltip?.destroy();
     void this.multiplayerSys?.leaveRoom();
     this.interaction?.destroy();
     this.animalMgr?.destroyAll();
@@ -1137,6 +1206,22 @@ export class GameScene extends Phaser.Scene {
       }
     }
     return { x: cx * TILE_SIZE + TILE_SIZE / 2, y: cy * TILE_SIZE + TILE_SIZE / 2 };
+  }
+
+  /** 지붕 아래 타일 Set 반환 (인접 8방향 내 지붕 구조물의 타일) */
+  private getRoofedTiles(): Set<string> {
+    const roofed = new Set<string>();
+    for (const s of this.buildSystem.getAllStructures()) {
+      if (s.defName === 'roof') {
+        // 지붕 자신과 인접 8방향 타일을 실내로 처리
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            roofed.add(`${s.tileX + dx},${s.tileY + dy}`);
+          }
+        }
+      }
+    }
+    return roofed;
   }
 
   private executeMapTransition(nmx: number, nmy: number, npx: number, npy: number): void {
@@ -1714,16 +1799,37 @@ export class GameScene extends Phaser.Scene {
       }
     }
     if (closestStruct) {
-      closestStruct.durability -= 15;
+      const dmgResult = this.durabilitySystem.applyDamage(closestStruct, 15);
       this.effects.spawnFloatText(
         closestStruct.tileX * TILE_SIZE + TILE_SIZE / 2,
         closestStruct.tileY * TILE_SIZE - 4,
         '-15', '#ff8844',
       );
-      if (closestStruct.durability <= 0) {
-        this.buildSystem.removeStructureAt(closestStruct.tileX, closestStruct.tileY);
+      if (!dmgResult.alive) {
+        this.destroyStructure(closestStruct.tileX, closestStruct.tileY, '광란에 의해 파괴되었습니다');
       }
     }
+  }
+
+  /** 내구도 0으로 구조물 파괴 — 재료 50% 회수 후 제거 */
+  private destroyStructure(tileX: number, tileY: number, reason = '구조물이 무너졌습니다'): void {
+    const struct = this.buildSystem.getAt(tileX, tileY);
+    if (!struct) return;
+    const def = STRUCTURE_DEFS[struct.defName];
+    const cost = struct.material === 'wood' ? def.woodCost : def.stoneCost;
+    // 재료 50% 회수
+    for (const [itemKey, count] of Object.entries(cost)) {
+      this.inventory.add(itemKey, Math.floor(count * 0.5));
+    }
+    // 파괴 연출: 빨간 틴트 → 흔들림
+    struct.sprite.setTint(0xff3322);
+    this.tweens.add({
+      targets: struct.sprite,
+      x: struct.sprite.x + 2, y: struct.sprite.y + 1,
+      duration: 50, yoyo: true, repeat: 2,
+      onComplete: () => this.buildSystem.removeStructureAt(tileX, tileY),
+    });
+    this.showNotificationPopup(reason, '#ff8844');
   }
 
   // ── 저장 / 불러오기 ──────────────────────────────────────────────────────────

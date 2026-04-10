@@ -1084,6 +1084,30 @@ function drawTiger(state: 'idle' | 'walk' | 'attack'): HTMLCanvasElement {
   return c;
 }
 
+/** Canvas API로 균열 오버레이 텍스처 생성 (레벨 1~3) */
+function drawCrackOverlay(level: 1 | 2 | 3): HTMLCanvasElement {
+  const c = makeCanvas();
+  const ctx = c.getContext('2d')!;
+  const rand = seededRand(level * 99);
+
+  ctx.clearRect(0, 0, TILE, TILE);
+  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+
+  const lines = level === 1 ? 2 : level === 2 ? 4 : 6;
+  for (let i = 0; i < lines; i++) {
+    ctx.lineWidth = level === 1 ? 1 : level === 2 ? 1.5 : 2;
+    const x1 = Math.floor(rand() * TILE);
+    const y1 = Math.floor(rand() * TILE);
+    const x2 = x1 + (rand() - 0.5) * 14;
+    const y2 = y1 + (rand() - 0.5) * 14;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  }
+  return c;
+}
+
 export function registerTextures(scene: Phaser.Scene): void {
   if (scene.textures.exists('tile_dirt')) return;
 
@@ -1171,4 +1195,9 @@ export function registerTextures(scene: Phaser.Scene): void {
   // Stew food items
   scene.textures.addCanvas('item_fish_stew',  drawCookedFish());
   scene.textures.addCanvas('item_meat_stew',  drawCookedMeat());
+
+  // Crack overlays (1~3 levels)
+  scene.textures.addCanvas('crack_1', drawCrackOverlay(1));
+  scene.textures.addCanvas('crack_2', drawCrackOverlay(2));
+  scene.textures.addCanvas('crack_3', drawCrackOverlay(3));
 }
