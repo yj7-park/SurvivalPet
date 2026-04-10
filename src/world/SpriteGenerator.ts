@@ -1149,6 +1149,52 @@ function drawSeedling(): HTMLCanvasElement {
   return c;
 }
 
+function drawTorchItem(): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = 16; c.height = 16;
+  const ctx = c.getContext('2d')!;
+  // Handle
+  ctx.fillStyle = '#8b5e3c';
+  ctx.fillRect(7, 6, 3, 9);
+  // Flame
+  ctx.fillStyle = '#ff8800';
+  ctx.beginPath();
+  ctx.ellipse(8, 5, 3, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#ffee44';
+  ctx.beginPath();
+  ctx.ellipse(8, 4, 1.5, 2.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  return c;
+}
+
+function drawTorchPlaced(dim: boolean): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = 16; c.height = 32;
+  const ctx = c.getContext('2d')!;
+  // Stick
+  ctx.fillStyle = '#8b5e3c';
+  ctx.fillRect(7, 12, 3, 20);
+  if (!dim) {
+    // Full flame
+    ctx.fillStyle = '#ff6600';
+    ctx.beginPath();
+    ctx.ellipse(8, 9, 4, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffee44';
+    ctx.beginPath();
+    ctx.ellipse(8, 7, 2, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    // Dim flame
+    ctx.fillStyle = '#cc4400';
+    ctx.beginPath();
+    ctx.ellipse(8, 11, 2, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  return c;
+}
+
 export function registerTextures(scene: Phaser.Scene): void {
   if (scene.textures.exists('tile_dirt')) return;
 
@@ -1246,4 +1292,9 @@ export function registerTextures(scene: Phaser.Scene): void {
 
   // Seedling (tree regrowth animation)
   scene.textures.addCanvas('seedling', drawSeedling());
+
+  // Torch sprites
+  scene.textures.addCanvas('item_torch',        drawTorchItem());
+  scene.textures.addCanvas('torch_placed',      drawTorchPlaced(false));
+  scene.textures.addCanvas('torch_placed_dim',  drawTorchPlaced(true));
 }

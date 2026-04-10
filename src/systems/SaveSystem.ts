@@ -25,6 +25,8 @@ export interface CharacterSaveData {
     weapon: string | null;
     armor: string | null;
     shield: string | null;
+    torch?: string | null;
+    torchRemainingMs?: number;
   };
   proficiency: Record<ProficiencyType, { level: number; xp: number; totalXp: number }>;
   unlockedResearch: string[];
@@ -38,6 +40,8 @@ export interface BuildingSaveEntry {
   durability: number;
   material: 'wood' | 'stone';
   doorOpen?: boolean;
+  placedAt?: number;   // for placed torches
+  durationMs?: number; // for placed torches
 }
 
 export interface WorldSaveData {

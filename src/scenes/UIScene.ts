@@ -17,6 +17,7 @@ type GameSceneRef = {
   soundSystem: import('../systems/SoundSystem').SoundSystem;
   sitSystem: import('../systems/SitSystem').SitSystem;
   tutorialSystem: import('../systems/TutorialSystem').TutorialSystem;
+  lightSystem: import('../systems/LightSystem').LightSystem;
   isMultiplayer: boolean;
   seed: string;
   mapX: number;
@@ -142,6 +143,17 @@ export class UIScene extends Phaser.Scene {
       gs.inventory,
       () => this.inventoryUI.getEquippedWeaponId(),
       () => gs.proficiency.getLevel('combat'),
+      {
+        getTorchRemaining: () => gs.lightSystem?.getTorchRemaining() ?? 0,
+        onEquipTorch: () => {
+          const result = gs.equipmentSystem.equipTorch(gs.inventory);
+          if (result.ok) gs.lightSystem?.equipTorch();
+        },
+        onUnequipTorch: () => {
+          gs.lightSystem?.unequipTorch();
+          gs.equipmentSystem.unequipTorch(gs.inventory, true);
+        },
+      },
     );
 
     // Tutorial event callbacks
@@ -254,8 +266,8 @@ export class UIScene extends Phaser.Scene {
       .join('  ');
     this.hudInventoryText.setText(inv || '(인벤토리 비어있음)');
 
-    // 야간 오버레이
-    this.nightOverlay.setAlpha(gs.gameTime.nightOverlay.alpha);
+    // 야간 오버레이 (LightSystem이 GameScene에서 처리하므로 비활성화)
+    this.nightOverlay.setAlpha(0);
 
     // 광기 오버레이
     if (s.isFrenzy) {

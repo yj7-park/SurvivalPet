@@ -5,6 +5,12 @@ import { ARMOR_DEFS, SHIELD_DEFS } from '../config/equipment';
 const ARMOR_ITEM_IDS  = new Set(Object.keys(ARMOR_DEFS));
 const SHIELD_ITEM_IDS = new Set(Object.keys(SHIELD_DEFS));
 
+type EquipmentPanelOptions = {
+  getTorchRemaining?: () => number;
+  onEquipTorch?: () => void;
+  onUnequipTorch?: () => void;
+};
+
 export class EquipmentPanel {
   private panel: HTMLDivElement | null = null;
 
@@ -13,6 +19,7 @@ export class EquipmentPanel {
     private inventory: Inventory,
     private getEquippedWeaponId: () => string | null,
     private getCombatLevel: () => number,
+    private opts: EquipmentPanelOptions = {},
   ) {}
 
   toggle(): void {
@@ -97,12 +104,56 @@ export class EquipmentPanel {
     }
 
     // Stats footer
+    // Torch slot
+    const torchRow = document.createElement('div');
+    torchRow.style.cssText = `
+      display:flex; align-items:center; gap:8px;
+      padding:6px 8px; background:#1a2030; border:1px solid #334; border-radius:4px;
+    `;
+    const torchLabel = document.createElement('div');
+    torchLabel.style.cssText = 'flex:1; font-size:11px; color:#ccc;';
+    torchLabel.textContent = '🔦 횃불';
+    torchRow.appendChild(torchLabel);
+
+    if (slots.torch) {
+      const remaining = this.opts.getTorchRemaining?.() ?? 0;
+      const mins = Math.floor(remaining / 60000);
+      const secs = Math.floor((remaining % 60000) / 1000);
+      const itemSpan = document.createElement('div');
+      itemSpan.style.cssText = 'font-size:10px; color:#ffcc44; flex:2;';
+      itemSpan.textContent = `🔥 장착 중 (${mins}:${String(secs).padStart(2, '0')} 남음)`;
+      torchRow.appendChild(itemSpan);
+      const unequipBtn = document.createElement('button');
+      unequipBtn.textContent = '해제';
+      unequipBtn.style.cssText = `padding:2px 6px; background:#2a2030; color:#ff8888; border:1px solid #664; border-radius:3px; font:9px monospace; cursor:pointer;`;
+      unequipBtn.addEventListener('click', () => { this.opts.onUnequipTorch?.(); this.refresh(); });
+      torchRow.appendChild(unequipBtn);
+    } else {
+      const hasTorchItem = this.inventory.has('item_torch', 1);
+      const emptySpan = document.createElement('div');
+      emptySpan.style.cssText = 'flex:2; font-size:9px; color:#555;';
+      emptySpan.textContent = '없음';
+      torchRow.appendChild(emptySpan);
+      const equipBtn = document.createElement('button');
+      equipBtn.textContent = '장착';
+      equipBtn.disabled = !hasTorchItem;
+      equipBtn.style.cssText = `padding:2px 6px; background:${hasTorchItem ? '#1a3a20' : '#1a1a1a'}; color:${hasTorchItem ? '#88ff88' : '#555'}; border:1px solid ${hasTorchItem ? '#446644' : '#334'}; border-radius:3px; font:9px monospace; cursor:${hasTorchItem ? 'pointer' : 'default'};`;
+      if (hasTorchItem) {
+        equipBtn.addEventListener('click', () => { this.opts.onEquipTorch?.(); this.refresh(); });
+      }
+      torchRow.appendChild(equipBtn);
+    }
+    slotsDiv.appendChild(torchRow);
+
     const defense     = this.equipment.totalDefense;
     const combatLvl   = this.getCombatLevel();
     const blockChance = this.equipment.totalBlockChance(combatLvl);
     const blockPct    = Math.round(blockChance * 100);
 
     statsDiv.textContent = `방어도: ${defense}   막기: ${blockPct}%${slots.shield ? '' : ' (방패 없음)'}`;
+    if (slots.torch) {
+      statsDiv.textContent += '   🔦 횃불 장착 중';
+    }
   }
 
   private makeSlotRow(

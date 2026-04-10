@@ -29,4 +29,5 @@ export const TWO_HANDED_WEAPONS = new Set(['bow']);
 export interface EquipmentSlots {
   armor: string | null;
   shield: string | null;
+  torch: string | null;
 }

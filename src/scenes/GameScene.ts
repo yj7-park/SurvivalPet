@@ -46,6 +46,7 @@ import { TutorialSystem } from '../systems/TutorialSystem';
 import { CheatsheetPanel } from '../ui/CheatsheetPanel';
 import { DoorSystem } from '../systems/DoorSystem';
 import { RoofSystem } from '../systems/RoofSystem';
+import { LightSystem } from '../systems/LightSystem';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -203,6 +204,10 @@ export class GameScene extends Phaser.Scene {
   private lastIndoorTileY = -1;
   private doorHintText!: Phaser.GameObjects.Text;
 
+  // 조명 시스템
+  lightSystem!: LightSystem;
+  private torchWarnedOnce = false;
+
   // Individual tree sprites for depth sorting
   private treeSprites = new Map<string, Phaser.GameObjects.Image>();
 
@@ -274,6 +279,19 @@ export class GameScene extends Phaser.Scene {
 
     this.cameras.main.startFollow(this.player.sprite, true);
     this.cameras.main.setZoom(2);
+
+    // 조명 시스템 초기화
+    this.lightSystem = new LightSystem(this);
+    this.lightSystem.initPlayerBody(this.player.sprite.x, this.player.sprite.y);
+    this.lightSystem.setOnTorchExpired(() => {
+      this.equipmentSystem?.unequipTorch(this.inventory, false);
+      this.showNotificationPopup('횃불이 꺼졌습니다', '#ffaa44');
+      this.torchWarnedOnce = false;
+    });
+    this.lightSystem.setOnTorchWarning(() => {
+      this.showNotificationPopup('횃불이 곧 꺼집니다!', '#ffaa44');
+      this.torchWarnedOnce = true;
+    });
 
     // 맵 전환 시스템
     this.mapTransition = new MapTransitionSystem(
@@ -1301,6 +1319,15 @@ export class GameScene extends Phaser.Scene {
 
     this.mapTransition.check(this.player.sprite.x, this.player.sprite.y, this.mapX, this.mapY);
     this.miniMap.update(delta);
+
+    // 조명 시스템 업데이트
+    const gameHour = this.gameTime.hour + this.gameTime.minute / 60;
+    this.lightSystem?.update(
+      delta, gameHour,
+      this.player.sprite.x, this.player.sprite.y,
+      this.cameras.main, time,
+      this.playerIsIndoor,
+    );
     if (this.isMultiplayer) {
       const isMoving = this.player.isMovingByKeyboard() || this.combat.tracking;
       this.multiplayerSys.uploadState(
@@ -2281,7 +2308,11 @@ export class GameScene extends Phaser.Scene {
         maxHpDebuff: this.hungerSystem.getMaxHpDebuff(),
         poisoning: this.hungerSystem.serialize().poisoning,
         inventory: { slots: this.inventory.getSaveData() },
-        equipment: { weapon: null, armor: slots.armor, shield: slots.shield },
+        equipment: {
+          weapon: null, armor: slots.armor, shield: slots.shield,
+          torch: slots.torch ?? null,
+          torchRemainingMs: this.lightSystem?.getTorchRemaining() ?? 0,
+        },
         proficiency: this.proficiency.serialize(),
         unlockedResearch: [
           ...this.research.getCompletedIds(),
@@ -2337,7 +2368,15 @@ export class GameScene extends Phaser.Scene {
     this.inventory.restore(ch.inventory.slots);
 
     // 장비 복원 (인벤토리 조작 없이 직접 슬롯 설정)
-    this.equipmentSystem.restoreSlots({ armor: ch.equipment.armor, shield: ch.equipment.shield });
+    this.equipmentSystem.restoreSlots({
+      armor: ch.equipment.armor,
+      shield: ch.equipment.shield,
+      torch: ch.equipment.torch ?? null,
+    });
+    if (ch.equipment.torch && (ch.equipment.torchRemainingMs ?? 0) > 0) {
+      this.lightSystem?.equipTorch();
+      this.lightSystem?.setTorchRemaining(ch.equipment.torchRemainingMs!);
+    }
 
     // 숙련도 복원
     this.proficiency.restoreFrom(ch.proficiency);

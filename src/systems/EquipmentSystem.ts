@@ -4,7 +4,7 @@ import { Inventory } from './Inventory';
 export type EquipResult = { ok: true } | { ok: false; reason: string };
 
 export class EquipmentSystem {
-  private slots: EquipmentSlots = { armor: null, shield: null };
+  private slots: EquipmentSlots = { armor: null, shield: null, torch: null };
 
   equip(
     slot: keyof EquipmentSlots,
@@ -62,8 +62,28 @@ export class EquipmentSystem {
     return { ...this.slots };
   }
 
-  restoreSlots(slots: { armor: string | null; shield: string | null }): void {
-    this.slots = { ...slots };
+  equipTorch(inventory: Inventory): EquipResult {
+    if (this.slots.torch) return { ok: false, reason: '이미 횃불이 장착되어 있습니다' };
+    if (!inventory.has('item_torch', 1)) return { ok: false, reason: '횃불이 없습니다' };
+    inventory.remove('item_torch', 1);
+    this.slots.torch = 'item_torch';
+    return { ok: true };
+  }
+
+  unequipTorch(inventory: Inventory, returnItem: boolean): EquipResult {
+    if (!this.slots.torch) return { ok: false, reason: '장착된 횃불 없음' };
+    if (returnItem) {
+      if (!inventory.canAdd('item_torch')) return { ok: false, reason: '인벤토리가 가득 찼습니다' };
+      inventory.add('item_torch', 1);
+    }
+    this.slots.torch = null;
+    return { ok: true };
+  }
+
+  hasTorch(): boolean { return this.slots.torch !== null; }
+
+  restoreSlots(slots: { armor: string | null; shield: string | null; torch?: string | null }): void {
+    this.slots = { armor: slots.armor, shield: slots.shield, torch: slots.torch ?? null };
   }
 
   get totalDefense(): number {
