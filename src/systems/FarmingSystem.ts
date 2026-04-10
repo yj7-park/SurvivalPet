@@ -9,6 +9,12 @@ import {
   CropType, CROP_SEASONS, CROP_GROW_SPEED, CROP_YIELD,
   CROP_ITEM_IDS, CROP_LABELS, CROP_EMOJI, SEED_TO_CROP, SEED_ITEM_IDS,
 } from '../config/crops';
+import {
+  CropGrowthAnimator, DryWarningIndicator, FarmPlotBorder,
+  playWaterAnimation, playHarvestEffect,
+} from './FarmingVisualSystem';
+import { registerFarmTileTextures } from '../generators/FarmTileGenerator';
+import { registerCropHarvestTextures } from '../generators/CropSpriteGenerator';
 
 const WET_DURATION_MS = 30 * 60 * 1000; // 30분 실시간 = 1게임일 촉촉 유지
 const HOE_MAX_DURABILITY = 30;
@@ -62,7 +68,17 @@ export class FarmingSystem {
 
   private onMaturedCb?: (msg: string) => void;
 
-  constructor(private scene: Phaser.Scene) {}
+  private cropAnimator!: CropGrowthAnimator;
+  private dryIndicator!: DryWarningIndicator;
+  private farmBorder!: FarmPlotBorder;
+
+  constructor(private scene: Phaser.Scene) {
+    this.cropAnimator  = new CropGrowthAnimator(scene);
+    this.dryIndicator  = new DryWarningIndicator(scene);
+    this.farmBorder    = new FarmPlotBorder(scene);
+    registerFarmTileTextures(scene);
+    registerCropHarvestTextures(scene);
+  }
 
   setOnMatured(cb: (msg: string) => void): void { this.onMaturedCb = cb; }
   getToolState(): ToolState { return { ...this.toolState }; }
@@ -81,9 +97,11 @@ export class FarmingSystem {
       inventory.remove('item_hoe', 1);
       this.toolState.hoeDurability = HOE_MAX_DURABILITY;
       this.drawFarmlandSprite(tileX, tileY, false);
+      this.refreshFarmBorder();
       return 'broke';
     }
     this.drawFarmlandSprite(tileX, tileY, false);
+    this.refreshFarmBorder();
     return 'ok';
   }
 
@@ -114,6 +132,11 @@ export class FarmingSystem {
     }
 
     this.setWet(tileX, tileY);
+    // 물주기 시각 효과
+    const wx = tileX * TILE_SIZE + TILE_SIZE / 2;
+    const wy = tileY * TILE_SIZE + TILE_SIZE / 2;
+    playWaterAnimation(this.scene, wx, wy);
+    this.dryIndicator.hide(`${tileX}_${tileY}`);
     return 'ok';
   }
 
@@ -187,11 +210,25 @@ export class FarmingSystem {
     proficiency.addXP('farming' as import('./ProficiencySystem').ProficiencyType, 10);
 
     // Remove crop, keep farmland (in wet state)
+    const cropWorldX = tileX * TILE_SIZE + TILE_SIZE / 2;
+    const cropWorldY = tileY * TILE_SIZE + TILE_SIZE / 2;
+    // Harvest visual effect
+    playHarvestEffect(this.scene, crop.type, cropWorldX, cropWorldY);
     this.crops.delete(key);
-    this.cropSprites.get(key)?.destroy();
+    const cropSpr = this.cropSprites.get(key);
+    if (cropSpr) {
+      this.scene.tweens.add({
+        targets: cropSpr,
+        scaleX: 1.5, scaleY: 1.5, alpha: 0,
+        duration: 250, ease: 'Quad.easeOut',
+        onComplete: () => cropSpr.destroy(),
+      });
+    }
     this.cropSprites.delete(key);
+    this.dryIndicator.hide(key);
     // Restore wet farmland sprite
     this.updateFarmlandSprite(tileX, tileY, true);
+    this.refreshFarmBorder();
     return true;
   }
 
@@ -243,6 +280,16 @@ export class FarmingSystem {
         crop.stage = (crop.stage + 1) as 0 | 1 | 2;
         this.drawCropSprite(crop.tileX, crop.tileY, crop.type, crop.stage);
 
+        // 성장 애니메이션
+        const spr = this.cropSprites.get(key);
+        if (spr) {
+          if (crop.stage === 2) {
+            this.cropAnimator.onHarvestReady(spr);
+          } else {
+            this.cropAnimator.onStageAdvance(spr);
+          }
+        }
+
         if (crop.stage === 2) {
           const label = CROP_LABELS[crop.type];
           const emoji = CROP_EMOJI[crop.type];
@@ -262,10 +309,18 @@ export class FarmingSystem {
 
   update(_delta: number): void {
     const now = Date.now();
-    for (const crop of this.crops.values()) {
+    for (const [key, crop] of this.crops.entries()) {
       if (crop.isWet && now >= crop.wetUntil) {
         crop.isWet = false;
         this.updateFarmlandSprite(crop.tileX, crop.tileY, false);
+      }
+      // 물 고갈 경고 (stage < 2, not wet)
+      if (crop.stage < 2 && !crop.isWet) {
+        const wx = crop.tileX * TILE_SIZE + TILE_SIZE / 2;
+        const wy = crop.tileY * TILE_SIZE + TILE_SIZE / 2;
+        this.dryIndicator.show(key, wx, wy);
+      } else {
+        this.dryIndicator.hide(key);
       }
     }
   }
@@ -383,10 +438,31 @@ export class FarmingSystem {
     this.wildCrops = [];
     this.farmland.clear();
     this.crops.clear();
+    this.dryIndicator.hideAll();
+    this.farmBorder.draw([]);
   }
 
   destroy(): void {
     this.clearMap();
+    this.dryIndicator.destroy();
+    this.farmBorder.destroy();
+  }
+
+  private refreshFarmBorder(): void {
+    const positions: { tx: number; ty: number }[] = [];
+    for (const key of this.farmland.keys()) {
+      const [tx, ty] = key.split('_').map(Number);
+      positions.push({ tx, ty });
+    }
+    this.farmBorder.draw(positions);
+  }
+
+  getHarvestableCount(): number {
+    let count = 0;
+    for (const crop of this.crops.values()) {
+      if (crop.stage === 2) count++;
+    }
+    return count;
   }
 
   // ── Serialization ─────────────────────────────────────────────────────────────

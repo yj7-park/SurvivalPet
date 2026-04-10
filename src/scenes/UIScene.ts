@@ -26,6 +26,7 @@ type GameSceneRef = {
   mapX: number;
   mapY: number;
   isNearTable(): boolean;
+  farmingSystem?: { getHarvestableCount(): number };
 };
 
 export class UIScene extends Phaser.Scene {
@@ -53,6 +54,7 @@ export class UIScene extends Phaser.Scene {
   private hudPoisonIcon!: Phaser.GameObjects.Text;
   private hudSitStatus!: Phaser.GameObjects.Text;
   private hudWeatherTooltip!: Phaser.GameObjects.Text;
+  private hudHarvestBadge!: Phaser.GameObjects.Text;
   private prevFrenzy = false;
 
   constructor() { super({ key: 'UIScene' }); }
@@ -130,6 +132,12 @@ export class UIScene extends Phaser.Scene {
     this.hudPoisonIcon = this.add.text(W - 16, by0 + 14, '🤢', {
       fontSize: '11px', fontFamily: 'monospace',
     }).setDepth(102).setOrigin(1, 0.5).setVisible(false);
+
+    // 수확 가능 작물 뱃지 (우상단 미니맵 근처)
+    this.hudHarvestBadge = this.add.text(W - 8, 72, '', {
+      fontSize: '10px', color: '#1a1008', fontFamily: 'monospace',
+      backgroundColor: '#d4b030', padding: { x: 5, y: 2 },
+    }).setDepth(100).setOrigin(1, 0).setVisible(false);
 
     // 앉기 상태 아이콘 (우하단)
     this.hudSitStatus = this.add.text(W - 8, H - 8, '🪑 휴식 중  피로 +0.2/분', {
@@ -336,6 +344,14 @@ export class UIScene extends Phaser.Scene {
 
     // 앉기 상태 아이콘
     this.hudSitStatus.setVisible(gs.sitSystem?.isSitting() ?? false);
+
+    // 수확 가능 작물 뱃지
+    const harvestCount = gs.farmingSystem?.getHarvestableCount() ?? 0;
+    if (harvestCount > 0) {
+      this.hudHarvestBadge.setText(`🌾 ${harvestCount}`).setVisible(true);
+    } else {
+      this.hudHarvestBadge.setVisible(false);
+    }
 
     // 인벤토리 UI 업데이트 (무기 HUD 포함)
     this.inventoryUI.update();

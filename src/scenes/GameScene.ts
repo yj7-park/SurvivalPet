@@ -254,7 +254,7 @@ export class GameScene extends Phaser.Scene {
   private charRenderer?: CharacterRenderer;
 
   // 농업 시스템
-  private farmingSystem!: FarmingSystem;
+  farmingSystem!: FarmingSystem;
   private tileRenderer!: TileRenderer;
   private hoeMode = false;
   private seedPlantMode: string | null = null; // seed itemId
