@@ -64,6 +64,14 @@ export class InteractionSystem {
 
   setTiles(tiles: TileType[][]): void { this.tiles = tiles; }
   hasActiveInteraction(): boolean { return this.activeTarget !== null; }
+  getActiveGatherType(): 'woodcut' | 'mine' | 'fish' | null {
+    if (!this.activeTarget || this.activeTarget.kind !== 'tile') return null;
+    const t = this.activeTarget.tileType;
+    if (t === TileType.Tree)  return 'woodcut';
+    if (t === TileType.Rock)  return 'mine';
+    if (t === TileType.Water) return 'fish';
+    return null;
+  }
   setOnInteractionComplete(cb: (() => void) | null): void { this.onInteractionComplete = cb; }
   setOnResourceGathered(cb: (type: 'woodcutting' | 'mining' | 'fishing') => void): void { this.onResourceGathered = cb; }
   setOnMiningTick(cb: ((ratio: number, tx: number, ty: number) => void) | null): void { this.onMiningTick = cb; }

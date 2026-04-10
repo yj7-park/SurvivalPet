@@ -61,7 +61,7 @@ import { FarmingSystem } from '../systems/FarmingSystem';
 import { SEED_TO_CROP, SEED_ITEM_IDS, CROP_LABELS, CROP_EMOJI } from '../config/crops';
 import { FarmlandSaveEntry } from '../systems/SaveSystem';
 import { AnimationManager } from '../rendering/AnimationManager';
-import { CharacterRenderer } from '../rendering/CharacterRenderer';
+import { CharacterRenderer, CharActionState } from '../rendering/CharacterRenderer';
 import { TileRenderer, DIRT_TINTS } from '../rendering/TileRenderer';
 import { TreeRenderer } from '../rendering/TreeRenderer';
 import { ObjectRenderer } from '../rendering/ObjectRenderer';
@@ -1770,14 +1770,25 @@ export class GameScene extends Phaser.Scene {
         slots?.armor ?? null,
         slots?.shield ?? null,
       );
+      const isMoving = this.player.isMovingByKeyboard() || (this.moveTarget !== null);
+      let charAction: CharActionState = 'idle';
+      if (!isMoving) {
+        const gatherType = this.interaction.getActiveGatherType();
+        if (gatherType === 'woodcut') charAction = 'chop';
+        else if (gatherType === 'mine') charAction = 'mine';
+        else if (gatherType === 'fish') charAction = 'work';
+        else if (this.cookingRecipe !== null) charAction = 'work';
+        else if (this.combat?.isLockedOn()) charAction = 'attack';
+      }
       this.charRenderer.update(
         this.player.dir,
-        this.player.isMovingByKeyboard() || (this.moveTarget !== null),
+        isMoving,
         time / 1000,
         this.survival.hp,
         this.survival.hunger,
         this.survival.isFrenzy,
         this.sleepSystem.isSleeping(),
+        charAction,
       );
     }
 

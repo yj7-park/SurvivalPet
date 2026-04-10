@@ -5,6 +5,8 @@ import {
   getWeaponOverlayKey, getArmorOverlayKey, getShieldOverlayKey,
 } from '../config/overlays';
 
+export type CharActionState = 'idle' | 'chop' | 'mine' | 'work' | 'attack';
+
 export class CharacterRenderer {
   private weaponSprite: Phaser.GameObjects.Sprite | null = null;
   private armorSprite: Phaser.GameObjects.Sprite | null = null;
@@ -64,6 +66,7 @@ export class CharacterRenderer {
     hunger: number,
     isFrenzy: boolean,
     isSleeping: boolean,
+    actionState: CharActionState = 'idle',
   ): void {
     const x = this.sprite.x;
     const y = this.sprite.y;
@@ -71,9 +74,20 @@ export class CharacterRenderer {
 
     // Animation
     const actualDir = dir === 'right' ? 'left' : dir;
-    const animKey = isMoving
-      ? `walk_${this.skin}_${actualDir}`
-      : `idle_${this.skin}_${actualDir}`;
+    let animKey: string;
+    if (isSleeping) {
+      animKey = `idle_${this.skin}_${actualDir}`;
+    } else if (isMoving) {
+      animKey = `walk_${this.skin}_${actualDir}`;
+    } else {
+      switch (actionState) {
+        case 'chop':   animKey = `chop_${this.skin}_${actualDir}`;   break;
+        case 'mine':   animKey = `mine_${this.skin}_${actualDir}`;   break;
+        case 'work':   animKey = `work_${this.skin}_${actualDir}`;   break;
+        case 'attack': animKey = `attack_${this.skin}_${actualDir}`; break;
+        default:       animKey = `idle_${this.skin}_${actualDir}`;   break;
+      }
+    }
 
     if (this.lastAnimKey !== animKey) {
       this.sprite.play(animKey, true);
@@ -81,8 +95,8 @@ export class CharacterRenderer {
     }
     this.sprite.setFlipX(dir === 'right');
 
-    // Breathing on idle
-    if (!isMoving && !isSleeping) {
+    // Breathing on idle only (not during actions or movement)
+    if (!isMoving && !isSleeping && actionState === 'idle') {
       const breathScale = 1.0 + Math.sin(time * 1.2) * 0.012;
       this.sprite.setScale(1.0, breathScale);
     } else {

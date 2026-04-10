@@ -32,6 +32,34 @@ export class AnimationManager {
           frameRate: 8,
           repeat: -1,
         });
+        // Chop (woodcutting): fast arm-swing using walk frames
+        scene.anims.create({
+          key: `chop_${skin}_${dir}`,
+          frames: scene.anims.generateFrameNumbers(key, { frames: [base + 1, base + 2, base + 3] }),
+          frameRate: 10,
+          repeat: -1,
+        });
+        // Mine: rhythmic bob — step forward, idle pause
+        scene.anims.create({
+          key: `mine_${skin}_${dir}`,
+          frames: scene.anims.generateFrameNumbers(key, { frames: [base + 1, base + 2, base + 1, base + 0] }),
+          frameRate: 8,
+          repeat: -1,
+        });
+        // Work (cook / fish): slow working motion
+        scene.anims.create({
+          key: `work_${skin}_${dir}`,
+          frames: scene.anims.generateFrameNumbers(key, { frames: [base + 0, base + 1, base + 0] }),
+          frameRate: 3,
+          repeat: -1,
+        });
+        // Attack: quick strike
+        scene.anims.create({
+          key: `attack_${skin}_${dir}`,
+          frames: scene.anims.generateFrameNumbers(key, { frames: [base + 3, base + 0] }),
+          frameRate: 14,
+          repeat: -1,
+        });
       }
     }
 
