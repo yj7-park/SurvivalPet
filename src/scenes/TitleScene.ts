@@ -26,6 +26,29 @@ const TITLE_SKY_HEX: Record<'dawn' | 'day' | 'dusk' | 'night', { top: number; bo
   night: { top: 0x050510, bottom: 0x0a0818 },
 };
 
+export function playGameStartTransition(scene: Phaser.Scene, onComplete: () => void): void {
+  const W = scene.cameras.main.width;
+  const H = scene.cameras.main.height;
+
+  scene.cameras.main.zoomTo(1.15, 800, 'Linear');
+
+  const flash = scene.add.rectangle(W / 2, H / 2, W, H, 0xffffff, 0)
+    .setScrollFactor(0).setDepth(100);
+
+  scene.tweens.add({
+    targets: flash, alpha: 1,
+    duration: 300, delay: 600, ease: 'Quad.easeIn',
+    onComplete: () => onComplete(),
+  });
+
+  const txt = scene.add.text(W / 2, H / 2, '탐험을 시작합니다!', {
+    fontSize: '20px', color: '#000000',
+    fontFamily: 'Courier New', fontStyle: 'bold',
+  }).setOrigin(0.5).setScrollFactor(0).setDepth(101).setAlpha(0);
+
+  scene.tweens.add({ targets: txt, alpha: 1, duration: 200, delay: 650 });
+}
+
 export class TitleScene extends Phaser.Scene {
   private tileRT!: Phaser.GameObjects.RenderTexture;
   private overlay!: HTMLDivElement;
