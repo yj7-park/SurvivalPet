@@ -2169,6 +2169,55 @@ function drawFallLeaf(): HTMLCanvasElement {
   return c;
 }
 
+function drawTitleLogo(): HTMLCanvasElement {
+  const c = makeCanvas(400, 110);
+  const ctx = c.getContext('2d')!;
+
+  // Campfire flame silhouette behind text
+  ctx.fillStyle = 'rgba(200, 100, 20, 0.15)';
+  ctx.beginPath();
+  ctx.moveTo(200, 100); ctx.lineTo(160, 20); ctx.lineTo(200, 50);
+  ctx.lineTo(200, 5);   ctx.lineTo(240, 50); ctx.lineTo(200, 10);
+  ctx.closePath(); ctx.fill();
+
+  // Shadow
+  ctx.font = 'bold 42px "Courier New", monospace';
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.textAlign = 'center';
+  ctx.fillText('BASECAMP', 203, 73);
+
+  // Golden gradient text
+  const grad = ctx.createLinearGradient(0, 30, 0, 70);
+  grad.addColorStop(0, '#ffe090');
+  grad.addColorStop(0.5, '#e8a830');
+  grad.addColorStop(1, '#b07020');
+  ctx.fillStyle = grad;
+  ctx.fillText('BASECAMP', 200, 70);
+
+  // Outline
+  ctx.strokeStyle = '#7a4a10';
+  ctx.lineWidth = 1;
+  ctx.strokeText('BASECAMP', 200, 70);
+
+  // Subtitle
+  ctx.font = '13px "Courier New", monospace';
+  ctx.fillStyle = '#a09070';
+  ctx.fillText('생존 시뮬레이션', 200, 90);
+
+  // Decorative line
+  ctx.strokeStyle = '#7a5a20';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(80, 98); ctx.lineTo(320, 98); ctx.stroke();
+  // Center diamond
+  ctx.fillStyle = '#c89040';
+  ctx.beginPath();
+  ctx.moveTo(200, 93); ctx.lineTo(203, 98);
+  ctx.lineTo(200, 103); ctx.lineTo(197, 98);
+  ctx.closePath(); ctx.fill();
+
+  return c;
+}
+
 export function registerTextures(scene: Phaser.Scene): void {
   if (scene.textures.exists('tile_dirt')) return;
 
@@ -2399,4 +2448,7 @@ export function registerTextures(scene: Phaser.Scene): void {
   scene.textures.addCanvas('item_carrot_stew',      drawFoodItem('carrot_stew'));
   scene.textures.addCanvas('item_pumpkin_porridge', drawFoodItem('pumpkin_porridge'));
   scene.textures.addCanvas('item_baked_potato',     drawFoodItem('baked_potato'));
+
+  // Title logo
+  scene.textures.addCanvas('title_logo', drawTitleLogo());
 }

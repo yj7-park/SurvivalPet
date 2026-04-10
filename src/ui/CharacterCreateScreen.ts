@@ -2,6 +2,13 @@ import { drawCharacterCanvas, CHAR_PALETTES } from '../world/SpriteGenerator';
 
 type StatKey = 'str' | 'agi' | 'con' | 'int';
 
+const STAT_BAR_COLORS: Record<StatKey, string> = {
+  str: '#e85030',
+  agi: '#30e860',
+  con: '#3080e8',
+  int: '#e0a830',
+};
+
 interface Stats { str: number; agi: number; con: number; int: number }
 
 export interface CharacterData {
@@ -174,7 +181,7 @@ export class CharacterCreateScreen {
         <span style="min-width:90px;color:#bbb;font-size:11px">${label}</span>
         <button class="stat-dec" style="width:22px;height:22px;background:#2a3a4a;color:#adf;border:1px solid #446;border-radius:3px;cursor:pointer;font:12px monospace">−</button>
         <div style="flex:1;height:8px;background:#222;border-radius:4px;overflow:hidden">
-          <div class="stat-bar-fill" style="height:100%;background:#4a8acc;border-radius:4px;transition:width 0.1s;width:${((this.stats[key] - 2) / 8) * 100}%"></div>
+          <div class="stat-bar-fill" style="height:100%;background:${STAT_BAR_COLORS[key]};border-radius:4px;transition:width 0.1s;width:${((this.stats[key] - 2) / 8) * 100}%"></div>
         </div>
         <span class="stat-val" style="min-width:20px;text-align:center;color:#fff;font-weight:bold">${this.stats[key]}</span>
         <button class="stat-inc" style="width:22px;height:22px;background:#2a3a4a;color:#adf;border:1px solid #446;border-radius:3px;cursor:pointer;font:12px monospace">+</button>

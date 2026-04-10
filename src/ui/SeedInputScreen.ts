@@ -1,5 +1,37 @@
 import { generateSeed } from '../utils/seedRandom';
 import { MultiplayerSystem } from '../systems/MultiplayerSystem';
+import { MapGenerator, TileType } from '../world/MapGenerator';
+
+const MINIMAP_COLORS: Record<string, string> = {
+  [TileType.Dirt]:  '#b89060',
+  [TileType.Water]: '#4a88c0',
+  [TileType.Rock]:  '#707878',
+  [TileType.Tree]:  '#3a6820',
+};
+
+function generateMapThumbnail(seed: string): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 80;
+  const ctx = canvas.getContext('2d')!;
+  const scale = 80 / 100;
+
+  const mapGen = new MapGenerator(seed);
+  const mapData = mapGen.generateMap(0, 0);
+  mapData.tiles.forEach((row, ty) => {
+    row.forEach((tile, tx) => {
+      ctx.fillStyle = MINIMAP_COLORS[tile] ?? '#b89060';
+      ctx.fillRect(
+        Math.floor(tx * scale), Math.floor(ty * scale),
+        Math.ceil(scale), Math.ceil(scale),
+      );
+    });
+  });
+
+  ctx.strokeStyle = '#5a4020';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0, 0, 80, 80);
+  return canvas;
+}
 
 export class SeedInputScreen {
   private overlay: HTMLDivElement | null = null;
@@ -33,10 +65,18 @@ export class SeedInputScreen {
           🎲 랜덤
         </button>
       </div>
-      <div style="color:#668;font-size:11px;margin-bottom:6px">
+      <div style="color:#668;font-size:11px;margin-bottom:4px">
         같은 Seed = 같은 맵이 생성됩니다
       </div>
-      <div id="si-count" style="color:#8ac;font-size:11px;margin-bottom:18px;min-height:16px"></div>
+      <div id="si-count" style="color:#8ac;font-size:11px;margin-bottom:8px;min-height:16px"></div>
+
+      <div id="si-preview-wrap" style="margin-bottom:14px;display:flex;flex-direction:column;align-items:center;gap:4px">
+        <div id="si-preview-label" style="color:#668;font-size:11px;align-self:flex-start">맵 미리보기</div>
+        <div id="si-preview-container"
+          style="width:80px;height:80px;background:#0a1020;border:1px solid #334;border-radius:2px;overflow:hidden">
+        </div>
+        <div id="si-preview-info" style="color:#8ac;font-size:11px"></div>
+      </div>
 
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button id="si-solo" style="padding:10px 18px;background:#2a6e4a;color:#fff;
@@ -52,7 +92,24 @@ export class SeedInputScreen {
 
     const seedInput = overlay.querySelector<HTMLInputElement>('#si-seed')!;
     const countDiv = overlay.querySelector<HTMLDivElement>('#si-count')!;
+    const previewContainer = overlay.querySelector<HTMLDivElement>('#si-preview-container')!;
+    const previewInfo = overlay.querySelector<HTMLDivElement>('#si-preview-info')!;
 
+    // Map thumbnail (debounced 500ms)
+    let previewTimeout: ReturnType<typeof setTimeout> | null = null;
+    const updatePreview = () => {
+      const raw = seedInput.value.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+      const seed = raw || 'random';
+      previewInfo.textContent = `씨드: ${seed}`;
+      setTimeout(() => {
+        const canvas = generateMapThumbnail(seed);
+        canvas.style.cssText = 'image-rendering:pixelated;display:block;width:80px;height:80px';
+        previewContainer.innerHTML = '';
+        previewContainer.appendChild(canvas);
+      }, 0);
+    };
+
+    // Player count (debounced)
     let countTimeout: ReturnType<typeof setTimeout> | null = null;
     const refreshCount = () => {
       const seed = seedInput.value.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -64,9 +121,14 @@ export class SeedInputScreen {
     };
 
     seedInput.addEventListener('input', () => {
+      if (previewTimeout) clearTimeout(previewTimeout);
+      previewTimeout = setTimeout(updatePreview, 500);
+
       if (countTimeout) clearTimeout(countTimeout);
       countTimeout = setTimeout(refreshCount, 600);
     });
+
+    setTimeout(updatePreview, 100);
     setTimeout(refreshCount, 300);
 
     overlay.querySelector('#si-x')!.addEventListener('click', () => {
@@ -76,6 +138,8 @@ export class SeedInputScreen {
 
     overlay.querySelector('#si-rand')!.addEventListener('click', () => {
       seedInput.value = generateSeed();
+      if (previewTimeout) clearTimeout(previewTimeout);
+      previewTimeout = setTimeout(updatePreview, 200);
       refreshCount();
     });
 
