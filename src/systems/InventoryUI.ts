@@ -7,6 +7,7 @@ import { CharacterStats } from '../entities/CharacterStats';
 import { EquipmentSystem } from './EquipmentSystem';
 import { ARMOR_DEFS, SHIELD_DEFS } from '../config/equipment';
 import { RECIPE_ITEMS, RECIPE_ITEM_IDS } from '../config/recipeItems';
+import { getItemRarity, RARITY_BORDER_CSS } from '../config/items';
 import { ProficiencySystem, PROF_NAMES } from './ProficiencySystem';
 import { HungerSystem } from './HungerSystem';
 import { FOOD_DEFS } from '../config/foods';
@@ -269,9 +270,11 @@ export class InventoryUI {
       const isShield    = key && SHIELD_ITEM_IDS.has(key);
       const isRecipeItem = key && RECIPE_ITEM_IDS.has(key);
 
+      const rarity = key ? getItemRarity(key) : 'common';
+      const rarityBorder = isEquipped ? '#88cc44' : (rarity !== 'common' ? RARITY_BORDER_CSS[rarity] : '#334');
       slot.style.cssText = `
         width:56px; height:56px; background:${isEquipped ? '#2a4020' : '#1a2030'};
-        border:1px solid ${isEquipped ? '#88cc44' : '#334'};
+        border:${rarity !== 'common' ? '2px' : '1px'} solid ${rarityBorder};
         border-radius:4px; display:flex; flex-direction:column;
         align-items:center; justify-content:center; cursor:${key ? 'pointer' : 'default'};
         position:relative; font-size:9px; text-align:center; padding:2px; box-sizing:border-box;

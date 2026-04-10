@@ -3,6 +3,7 @@ import { DROP_TABLES } from '../config/dropTables';
 import { RECIPE_ITEM_IDS } from '../config/recipeItems';
 import { Inventory } from './Inventory';
 import { SeededRandom } from '../utils/seedRandom';
+import { getItemRarity, RARITY_BORDER_HEX } from '../config/items';
 
 export interface GroundItem {
   id: string;
@@ -42,10 +43,12 @@ const PICKUP_RANGE_PX = 48;
 let _nextId = 0;
 
 interface SpriteBundle {
-  glow:  Phaser.GameObjects.Arc | null;
-  image: Phaser.GameObjects.Image;
-  text:  Phaser.GameObjects.Text;
-  name:  Phaser.GameObjects.Text | null;
+  glow:       Phaser.GameObjects.Arc | null;
+  shadow:     Phaser.GameObjects.Ellipse;
+  image:      Phaser.GameObjects.Image;
+  text:       Phaser.GameObjects.Text;
+  name:       Phaser.GameObjects.Text | null;
+  pickupRing: Phaser.GameObjects.Arc | null;
 }
 
 export class DropSystem {
@@ -113,13 +116,25 @@ export class DropSystem {
   // ── Sprites ───────────────────────────────────────────────────────────────
 
   private createSprite(id: string, item: GroundItem): void {
+    // Rarity-based glow color
+    const rarity = getItemRarity(item.itemId);
     let glow: Phaser.GameObjects.Arc | null = null;
 
-    if (item.glowing) {
-      const color = item.itemId.startsWith('item_recipe') ? 0xffd700 : 0x00bfff;
-      glow = this.scene.add.arc(item.x, item.y, 12, 0, 360, false, color, 0.35)
+    if (item.glowing || rarity !== 'common') {
+      const rarityColors: Record<string, number> = {
+        uncommon: 0x44aa44, rare: 0x4488ff, epic: 0xaa44ff,
+      };
+      const color = item.itemId.includes('item_recipe') || item.itemId.includes('item_blueprint')
+        ? 0xffd700
+        : rarityColors[rarity] ?? 0x44aa44;
+      const alpha = rarity === 'epic' ? 0.45 : 0.30;
+      glow = this.scene.add.arc(item.x, item.y, 12, 0, 360, false, color, alpha)
         .setDepth(item.y + 0.3);
     }
+
+    // Shadow ellipse
+    const shadow = this.scene.add.ellipse(item.x, item.y + 7, 14, 5, 0x000000, 0.28)
+      .setDepth(item.y + 0.2);
 
     // Use registered texture if available, fallback to colored square
     const texKey = item.itemId;
@@ -136,7 +151,7 @@ export class DropSystem {
     ).setDepth(item.y + 0.6).setOrigin(0, 0);
 
     let nameText: Phaser.GameObjects.Text | null = null;
-    if (item.glowing) {
+    if (item.glowing || rarity === 'epic') {
       nameText = this.scene.add.text(
         item.x, item.y - 16,
         item.itemId.replace('item_', '').replace(/_/g, ' '),
@@ -145,16 +160,19 @@ export class DropSystem {
       ).setDepth(item.y + 0.7).setOrigin(0.5, 1);
     }
 
-    this.spriteBundles.set(id, { glow, image, text: amountText, name: nameText });
+    this.spriteBundles.set(id, { glow, shadow, image, text: amountText, name: nameText, pickupRing: null });
+    void RARITY_BORDER_HEX; // used for import
   }
 
   private destroySprite(id: string): void {
     const bundle = this.spriteBundles.get(id);
     if (!bundle) return;
     bundle.glow?.destroy();
+    bundle.shadow.destroy();
     bundle.image.destroy();
     bundle.text.destroy();
     bundle.name?.destroy();
+    bundle.pickupRing?.destroy();
     this.spriteBundles.delete(id);
   }
 
@@ -220,12 +238,32 @@ export class DropSystem {
         bundle.image.setPosition(item.x, displayY);
         bundle.text.setPosition(item.x + 8, displayY + 6);
 
+        // Shadow scales with float (squash when high)
+        const shadowScale = 1.0 - Math.abs(floatY) * 0.05;
+        bundle.shadow.setPosition(item.x, item.y + 7).setScale(shadowScale, 1);
+
         if (bundle.glow) {
           // Pulse glow radius 10 → 14 over 2s
           const r = 10 + Math.abs(Math.sin(time * Math.PI)) * 4;
           bundle.glow.setRadius(r).setPosition(item.x, displayY);
         }
         if (bundle.name) bundle.name.setPosition(item.x, displayY - 16);
+
+        // Pickup ring: show for nearest item within range
+        const dist = Math.hypot(item.x - playerX, item.y - playerY);
+        if (dist <= PICKUP_RANGE_PX) {
+          if (!bundle.pickupRing) {
+            bundle.pickupRing = this.scene.add.arc(item.x, item.y, 10, 0, 360, false, 0xffffff, 0)
+              .setStrokeStyle(1, 0xffffff, 0.45)
+              .setDepth(item.y + 0.4);
+          }
+          bundle.pickupRing.setPosition(item.x, displayY);
+          const blink = Math.floor(time * 2.5) % 2 === 0 ? 0.5 : 0.2;
+          bundle.pickupRing.setAlpha(blink);
+        } else if (bundle.pickupRing) {
+          bundle.pickupRing.destroy();
+          bundle.pickupRing = null;
+        }
 
         // Blink when near despawn
         if (item.ttlMs > 0) {
