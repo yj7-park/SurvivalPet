@@ -90,6 +90,13 @@ export class DropSystem {
     }
   }
 
+  /** 특정 아이템을 지면에 직접 스폰 (사망 드랍 등) */
+  spawnItem(itemId: string, x: number, y: number, amount = 1): void {
+    const angle  = Math.random() * Math.PI * 2;
+    const radius = Math.random() * 12;
+    this.createGroundItem(itemId, amount, x + Math.cos(angle) * radius, y + Math.sin(angle) * radius);
+  }
+
   private createGroundItem(itemId: string, amount: number, x: number, y: number): void {
     const id = `gi_${_nextId++}`;
     const isGlowing = RECIPE_ITEM_IDS.has(itemId);

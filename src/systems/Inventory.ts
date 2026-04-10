@@ -52,4 +52,8 @@ export class Inventory {
       if (slot) this.items.set(slot.itemId, slot.amount);
     }
   }
+
+  clear(): void {
+    this.items.clear();
+  }
 }

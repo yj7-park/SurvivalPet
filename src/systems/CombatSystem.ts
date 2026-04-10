@@ -24,6 +24,7 @@ export class CombatSystem {
   private combatEndCallback: (() => void) | null = null;
   private onKillCallback: (() => void) | null = null;
   private onAnimalKillCallback: ((x: number, y: number, type: string) => void) | null = null;
+  private onPlayerHitCallback: ((dmg: number) => void) | null = null;
   private effects: EffectSystem | null = null;
   private equipmentSystem: EquipmentSystem | null = null;
   private proficiency: ProficiencySystem | null = null;
@@ -78,6 +79,7 @@ export class CombatSystem {
   setHitFlashCallback(cb: () => void): void { this.hitFlashCallback = cb; }
   setCombatEndCallback(cb: () => void): void { this.combatEndCallback = cb; }
   setOnKillCallback(cb: () => void): void { this.onKillCallback = cb; }
+  setOnPlayerHitCallback(cb: (dmg: number) => void): void { this.onPlayerHitCallback = cb; }
   setOnAnimalKillCallback(cb: (x: number, y: number, type: string) => void): void {
     this.onAnimalKillCallback = cb;
   }
@@ -110,6 +112,10 @@ export class CombatSystem {
     this.survival.hp = Math.max(0, this.survival.hp - actual);
     this.spawnFloatText(this.player.sprite.x, this.player.sprite.y - 20, `-${actual}`, '#ff4444');
     this.hitFlashCallback?.();
+    this.onPlayerHitCallback?.(actual);
+    // 피격 스프라이트 흰색 플래시
+    this.player.sprite.setTintFill(0xffffff);
+    this.scene.time.delayedCall(150, () => this.player.sprite.clearTint());
   }
 
   update(delta: number): void {
@@ -160,7 +166,12 @@ export class CombatSystem {
     const animalType = target.config.type as string;
     const drops = this.animalMgr.attackAnimal(target, dmg, this.player.sprite.x, this.player.sprite.y, this.rng);
     drops.forEach(d => this.inventory.add(d.itemKey, d.count));
-    this.spawnFloatText(tx, ty - 20, `-${dmg}`, '#ff6666');
+    this.spawnFloatText(tx, ty - 20, `-${dmg}`, '#ffffff');
+    // 적 피격 스프라이트 흰색 플래시
+    if (!target.isDead) {
+      target.sprite.setTintFill(0xffffff);
+      this.scene.time.delayedCall(120, () => target.sprite.clearTint());
+    }
     if (target.isDead) {
       this.onKillCallback?.();
       this.onAnimalKillCallback?.(tx, ty, animalType);

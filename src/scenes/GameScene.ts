@@ -38,6 +38,8 @@ import { HoverTooltip } from '../ui/HoverTooltip';
 import { SleepSystem } from '../systems/SleepSystem';
 import { SleepOverlay } from '../ui/SleepOverlay';
 import { HungerSystem } from '../systems/HungerSystem';
+import { HPSystem } from '../systems/HPSystem';
+import { DeathScreen } from '../ui/DeathScreen';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -148,6 +150,14 @@ export class GameScene extends Phaser.Scene {
   private hungerWarnedAt20 = false;
   private hungerWarnedAt10 = false;
 
+  // HP 시스템 (자연 회복, 사망)
+  private hpSystem = new HPSystem();
+  private deathScreen!: DeathScreen;
+  private isDead = false;
+  // 게임 통계
+  private enemiesKilled = 0;
+  private buildingsBuilt = 0;
+
   // 행복 수치 & 광란
   private actionSystem = new ActionSystem();
   private frenzyAura!: Phaser.GameObjects.Arc;
@@ -255,6 +265,9 @@ export class GameScene extends Phaser.Scene {
     // 수면 오버레이
     this.sleepOverlay = new SleepOverlay();
 
+    // 사망 화면
+    this.deathScreen = new DeathScreen();
+
     // 내구도 호버 툴팁 & 수리
     this.hoverTooltip = new HoverTooltip(
       () => this.inventory,
@@ -296,6 +309,7 @@ export class GameScene extends Phaser.Scene {
       this.actionSystem.onActionDone('build', this.survival);
       this.survival.addFatigue(5); // 건설 피로
       this.survival.hunger = Math.max(0, this.survival.hunger - 3); // 건설 허기
+      this.buildingsBuilt++;
       this.commandQueue.completeCommand();
       this.processNextQueueCommand();
       if (this.isMultiplayer && struct) {
@@ -377,6 +391,12 @@ export class GameScene extends Phaser.Scene {
       this.actionSystem.onActionDone('kill_enemy', this.survival);
       this.survival.addFatigue(2); // 전투 피로
       this.survival.hunger = Math.max(0, this.survival.hunger - 1); // 전투 허기
+      this.enemiesKilled++;
+    });
+
+    // 피격 시 HPSystem 타이머 리셋
+    this.combat.setOnPlayerHitCallback(() => {
+      this.hpSystem.onHit();
     });
 
     // Pointer events — use ptr.worldX/worldY (Phaser applies camera matrix correctly)
@@ -781,6 +801,14 @@ export class GameScene extends Phaser.Scene {
     this.gameTime.update(effectiveDelta);
     this.survival.update(effectiveDelta);
     this.hungerSystem.update(effectiveDelta, this.survival, this.charStats);
+    this.hpSystem.update(effectiveDelta, this.survival, this.charStats, this.hungerSystem);
+
+    // 사망 감지
+    if (!this.isDead && this.survival.hp <= 0) {
+      this.isDead = true;
+      this.triggerDeath();
+    }
+
     if (this.sleepOverlay.isVisible()) {
       this.sleepOverlay.update(this.survival, this.gameTime);
     }
@@ -1188,6 +1216,7 @@ export class GameScene extends Phaser.Scene {
     this.miniMap?.destroy();
     this.hoverTooltip?.destroy();
     this.sleepOverlay?.destroy();
+    this.deathScreen?.destroy();
     void this.multiplayerSys?.leaveRoom();
     this.interaction?.destroy();
     this.animalMgr?.destroyAll();
@@ -1947,6 +1976,8 @@ export class GameScene extends Phaser.Scene {
     this.player.sprite.setAngle(0);
     // 수면으로 식중독 해제
     this.hungerSystem.clearPoisonOnWake();
+    // 기상 시 HP 회복 (CON×3)
+    this.hpSystem.onWakeUp(this.charStats, this.survival);
 
     const msgs: Record<string, [string, string]> = {
       recovered: ['☀ 기상!', '#ffee44'],
@@ -2111,6 +2142,47 @@ export class GameScene extends Phaser.Scene {
     for (const b of saveData.world.buildings) {
       this.buildSystem.forceRestoreStructure(b.type, b.material, b.tileX, b.tileY, b.durability);
     }
+  }
+
+  // ── Death ─────────────────────────────────────────────────────────────────────
+
+  private triggerDeath(): void {
+    // 캐릭터 회색 틴트 → 사망 연출
+    this.player.sprite.setTint(0x888888);
+
+    // 인벤토리 전부 지면에 드랍
+    for (const { key, count } of this.inventory.getAll()) {
+      this.dropSystem.spawnItem(key, this.player.sprite.x, this.player.sprite.y, count);
+    }
+    this.inventory.clear();
+
+    // 저장 슬롯 삭제
+    if (!this.isMultiplayer) {
+      this.saveSystem.deleteSave(this.saveSystem.getLastUsedSlot());
+    }
+
+    // 멀티플레이 퇴장
+    if (this.isMultiplayer) {
+      void this.multiplayerSys.leaveRoom();
+    }
+
+    // 0.5초 후 사망 화면 표시
+    this.time.delayedCall(500, () => {
+      this.cameras.main.fadeOut(1000, 0, 0, 0, (_cam: unknown, progress: number) => {
+        if (progress === 1) {
+          this.deathScreen.show({
+            playtimeMs: this.playtimeMs,
+            enemiesKilled: this.enemiesKilled,
+            buildingsBuilt: this.buildingsBuilt,
+            onReturnToTitle: () => {
+              this.deathScreen.destroy();
+              this.scene.stop('UIScene');
+              this.scene.start('TitleScene');
+            },
+          });
+        }
+      });
+    });
   }
 
   // ── isNearTable ──────────────────────────────────────────────────────────────

@@ -213,7 +213,13 @@ export class UIScene extends Phaser.Scene {
       this.hudStatBars.action.fill.setVisible(true);
     }
 
-    this.hudStatBars.hp.label.setText(`HP ${Math.ceil(s.hp)}/${s.maxHp}`);
+    const debuff = gs.hungerSystem?.getMaxHpDebuff() ?? 0;
+    const baseMaxHp = gs.charStats.maxHp;
+    const hpLabel = debuff > 0
+      ? `HP ${Math.ceil(s.hp)}/${s.maxHp} (↓${debuff})`
+      : `HP ${Math.ceil(s.hp)}/${s.maxHp}`;
+    this.hudStatBars.hp.label.setText(hpLabel);
+    void baseMaxHp;
     this.hudStatBars.hunger.label.setText('Hunger');
     this.hudStatBars.fatigue.label.setText('Fatigue');
     this.hudStatBars.action.label.setText('Action');
