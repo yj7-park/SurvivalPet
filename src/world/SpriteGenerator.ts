@@ -417,6 +417,208 @@ function drawOverlayArmor(material: 'leather' | 'wood' | 'stone' | 'iron'): HTML
   return c;
 }
 
+// ── Water animation spritesheet ───────────────────────────────────────────────
+// 4 frames × 32×32 = 128×32
+
+function drawWaterFrameCanvas(frameIdx: number): HTMLCanvasElement {
+  const c = makeCanvas();
+  const ctx = c.getContext('2d')!;
+
+  ctx.fillStyle = '#2e6fa3';
+  ctx.fillRect(0, 0, TILE, TILE);
+
+  const grad = ctx.createLinearGradient(0, 0, 0, TILE);
+  grad.addColorStop(0, 'rgba(100,180,220,0.5)');
+  grad.addColorStop(1, 'rgba(20,80,140,0.3)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, TILE, TILE);
+
+  const waveX = frameIdx * 4;
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+  ctx.lineWidth = 1.5;
+  for (let y = 4; y < TILE; y += 9) {
+    ctx.beginPath();
+    for (let x = 0; x <= TILE; x++) {
+      const wy = y + Math.sin((x + waveX) * 0.4) * 2;
+      x === 0 ? ctx.moveTo(x, wy) : ctx.lineTo(x, wy);
+    }
+    ctx.stroke();
+  }
+
+  const rand = seededRand(frameIdx * 17 + 42);
+  ctx.fillStyle = 'rgba(200,230,255,0.4)';
+  for (let i = 0; i < 3; i++) {
+    ctx.fillRect(Math.floor(rand() * TILE), Math.floor(rand() * TILE), 2, 1);
+  }
+  return c;
+}
+
+function drawWaterAnimSheet(): HTMLCanvasElement {
+  const c = makeCanvas(128, 32);
+  const ctx = c.getContext('2d')!;
+  for (let i = 0; i < 4; i++) ctx.drawImage(drawWaterFrameCanvas(i), i * 32, 0);
+  return c;
+}
+
+// ── Rock autotile (bitmask: N=1, E=2, S=4, W=8) ─────────────────────────────
+
+function drawRockAutotile(index: number): HTMLCanvasElement {
+  const c = makeCanvas();
+  const ctx = c.getContext('2d')!;
+  const rand = seededRand(7);
+
+  ctx.fillStyle = '#6b6b6b';
+  ctx.fillRect(0, 0, TILE, TILE);
+  ctx.fillStyle = '#4a4a4a';
+  for (let i = 0; i < 8; i++)
+    ctx.fillRect(Math.floor(rand() * TILE), Math.floor(rand() * TILE), Math.floor(rand() * 5) + 1, 1);
+  ctx.fillStyle = '#909090';
+  for (let i = 0; i < 10; i++)
+    ctx.fillRect(Math.floor(rand() * TILE), Math.floor(rand() * TILE), 2, 1);
+
+  const edgeSize = 7;
+  const addEdge = (side: 'N' | 'S' | 'E' | 'W') => {
+    let g: CanvasGradient;
+    if (side === 'N') {
+      g = ctx.createLinearGradient(0, 0, 0, edgeSize);
+      g.addColorStop(0, 'rgba(160,114,74,0.85)');
+      g.addColorStop(1, 'rgba(160,114,74,0)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, TILE, edgeSize);
+    } else if (side === 'S') {
+      g = ctx.createLinearGradient(0, TILE - edgeSize, 0, TILE);
+      g.addColorStop(0, 'rgba(160,114,74,0)');
+      g.addColorStop(1, 'rgba(160,114,74,0.85)');
+      ctx.fillStyle = g; ctx.fillRect(0, TILE - edgeSize, TILE, edgeSize);
+    } else if (side === 'W') {
+      g = ctx.createLinearGradient(0, 0, edgeSize, 0);
+      g.addColorStop(0, 'rgba(160,114,74,0.85)');
+      g.addColorStop(1, 'rgba(160,114,74,0)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, edgeSize, TILE);
+    } else {
+      g = ctx.createLinearGradient(TILE - edgeSize, 0, TILE, 0);
+      g.addColorStop(0, 'rgba(160,114,74,0)');
+      g.addColorStop(1, 'rgba(160,114,74,0.85)');
+      ctx.fillStyle = g; ctx.fillRect(TILE - edgeSize, 0, edgeSize, TILE);
+    }
+  };
+
+  if (!(index & 1)) addEdge('N');
+  if (!(index & 2)) addEdge('E');
+  if (!(index & 4)) addEdge('S');
+  if (!(index & 8)) addEdge('W');
+  return c;
+}
+
+// ── Sand tile (water-adjacent dirt) ──────────────────────────────────────────
+
+function drawSandTile(): HTMLCanvasElement {
+  const c = makeCanvas();
+  const ctx = c.getContext('2d')!;
+  const rand = seededRand(123);
+  ctx.fillStyle = '#c8a060';
+  ctx.fillRect(0, 0, TILE, TILE);
+  ctx.fillStyle = '#d8b878';
+  for (let i = 0; i < 20; i++)
+    ctx.fillRect(Math.floor(rand() * TILE), Math.floor(rand() * TILE), 2, 1);
+  ctx.fillStyle = '#b89048';
+  for (let i = 0; i < 10; i++)
+    ctx.fillRect(Math.floor(rand() * TILE), Math.floor(rand() * TILE), 3, 2);
+  return c;
+}
+
+// ── Decoration sprites ────────────────────────────────────────────────────────
+
+function drawDecoGrassShort(): HTMLCanvasElement {
+  const c = makeCanvas(16, 12);
+  const ctx = c.getContext('2d')!;
+  ctx.strokeStyle = '#4a9a30'; ctx.lineWidth = 1.5;
+  [[3,12,2,5],[8,12,8,4],[13,12,12,6]].forEach(([x1,y1,x2,y2]) => {
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  });
+  ctx.strokeStyle = '#6abe48'; ctx.lineWidth = 1;
+  [[4,10,3,4],[9,10,9,3]].forEach(([x1,y1,x2,y2]) => {
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  });
+  return c;
+}
+
+function drawDecoGrassTall(): HTMLCanvasElement {
+  const c = makeCanvas(16, 18);
+  const ctx = c.getContext('2d')!;
+  ctx.strokeStyle = '#3a8820'; ctx.lineWidth = 1.5;
+  [[3,18,1,6],[8,18,8,3],[13,18,14,7]].forEach(([x1,y1,x2,y2]) => {
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  });
+  ctx.strokeStyle = '#58aa38';
+  ctx.beginPath(); ctx.moveTo(5,15); ctx.lineTo(3,4); ctx.stroke();
+  return c;
+}
+
+function drawDecoFlowerYellow(): HTMLCanvasElement {
+  const c = makeCanvas(12, 14);
+  const ctx = c.getContext('2d')!;
+  ctx.strokeStyle = '#4a9a30'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(6,14); ctx.lineTo(6,8); ctx.stroke();
+  ctx.fillStyle = '#f8d020';
+  [[4,5],[8,5],[6,3],[4,7],[8,7]].forEach(([x,y]) => ctx.fillRect(x-1,y-1,3,3));
+  ctx.fillStyle = '#f8a000';
+  ctx.beginPath(); ctx.arc(6,6,2,0,Math.PI*2); ctx.fill();
+  return c;
+}
+
+function drawDecoFlowerWhite(): HTMLCanvasElement {
+  const c = makeCanvas(12, 14);
+  const ctx = c.getContext('2d')!;
+  ctx.strokeStyle = '#4a9a30'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(6,14); ctx.lineTo(6,8); ctx.stroke();
+  ctx.fillStyle = '#f0f0f0';
+  [[4,5],[8,5],[6,3],[4,7],[8,7]].forEach(([x,y]) => ctx.fillRect(x-1,y-1,3,3));
+  ctx.fillStyle = '#f8d020';
+  ctx.beginPath(); ctx.arc(6,6,1.5,0,Math.PI*2); ctx.fill();
+  return c;
+}
+
+function drawDecoPebble(): HTMLCanvasElement {
+  const c = makeCanvas(10, 8);
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#8a8a8a';
+  ctx.beginPath(); ctx.ellipse(5,4,4,3,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#b0b0b0';
+  ctx.beginPath(); ctx.ellipse(4,3,2,1.5,-0.3,0,Math.PI*2); ctx.fill();
+  return c;
+}
+
+function drawDecoDeadGrass(): HTMLCanvasElement {
+  const c = makeCanvas(16, 10);
+  const ctx = c.getContext('2d')!;
+  ctx.strokeStyle = '#b07820'; ctx.lineWidth = 1.5;
+  [[3,10,1,3],[8,10,9,2],[13,10,15,5]].forEach(([x1,y1,x2,y2]) => {
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  });
+  return c;
+}
+
+function drawDecoSnowPatch(): HTMLCanvasElement {
+  const c = makeCanvas(20, 8);
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = 'rgba(230,240,255,0.9)';
+  ctx.beginPath(); ctx.ellipse(10,5,9,4,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.beginPath(); ctx.ellipse(8,4,5,3,-0.3,0,Math.PI*2); ctx.fill();
+  return c;
+}
+
+function drawDecoFallenLeaf(): HTMLCanvasElement {
+  const c = makeCanvas(14, 10);
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#c05818';
+  ctx.beginPath(); ctx.ellipse(7,5,6,4,0.3,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#8a3a10'; ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.moveTo(2,5); ctx.lineTo(12,5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(7,1); ctx.lineTo(7,9); ctx.stroke();
+  return c;
+}
+
 function drawEnemy(): HTMLCanvasElement {
   const c = makeCanvas(32, 32);
   const ctx = c.getContext('2d')!;
@@ -1691,6 +1893,32 @@ export function registerTextures(scene: Phaser.Scene): void {
       }
     }
   }
+
+  // Water animation spritesheet (128×32, 4 frames)
+  const waterSheet = scene.textures.addCanvas('tile_water_anim', drawWaterAnimSheet());
+  if (waterSheet) {
+    for (let i = 0; i < 4; i++) {
+      waterSheet.add(i, 0, i * 32, 0, 32, 32);
+    }
+  }
+
+  // Rock autotile variants (16 bitmask combinations)
+  for (let i = 0; i < 16; i++) {
+    scene.textures.addCanvas(`tile_rock_auto_${i}`, drawRockAutotile(i));
+  }
+
+  // Sand tile
+  scene.textures.addCanvas('tile_sand', drawSandTile());
+
+  // Decoration sprites
+  scene.textures.addCanvas('deco_grass_short',    drawDecoGrassShort());
+  scene.textures.addCanvas('deco_grass_tall',     drawDecoGrassTall());
+  scene.textures.addCanvas('deco_flower_yellow',  drawDecoFlowerYellow());
+  scene.textures.addCanvas('deco_flower_white',   drawDecoFlowerWhite());
+  scene.textures.addCanvas('deco_pebble',         drawDecoPebble());
+  scene.textures.addCanvas('deco_dead_grass',     drawDecoDeadGrass());
+  scene.textures.addCanvas('deco_snow_patch',     drawDecoSnowPatch());
+  scene.textures.addCanvas('deco_fallen_leaf',    drawDecoFallenLeaf());
 
   // Equipment overlay sprites
   scene.textures.addCanvas('overlay_sword_wood',    drawOverlaySword('wood'));

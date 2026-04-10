@@ -34,5 +34,14 @@ export class AnimationManager {
         });
       }
     }
+
+    // Water ripple animation
+    scene.anims.create({
+      key: 'water_ripple',
+      frames: scene.anims.generateFrameNumbers('tile_water_anim', { start: 0, end: 3 }),
+      frameRate: 3,
+      repeat: -1,
+      yoyo: true,
+    });
   }
 }

@@ -62,6 +62,7 @@ import { SEED_TO_CROP, SEED_ITEM_IDS, CROP_LABELS, CROP_EMOJI } from '../config/
 import { FarmlandSaveEntry } from '../systems/SaveSystem';
 import { AnimationManager } from '../rendering/AnimationManager';
 import { CharacterRenderer } from '../rendering/CharacterRenderer';
+import { TileRenderer, DIRT_TINTS } from '../rendering/TileRenderer';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -242,6 +243,7 @@ export class GameScene extends Phaser.Scene {
 
   // 농업 시스템
   private farmingSystem!: FarmingSystem;
+  private tileRenderer!: TileRenderer;
   private hoeMode = false;
   private seedPlantMode: string | null = null; // seed itemId
   private wateringMode = false;
@@ -328,6 +330,7 @@ export class GameScene extends Phaser.Scene {
     this.player.setTiles(this.currentTiles);
     this.player.sprite.setDepth(this.player.sprite.y);
     this.charRenderer = new CharacterRenderer(this, this.player.sprite, this.pendingAppearance);
+    this.tileRenderer = new TileRenderer(this);
 
     this.cameras.main.startFollow(this.player.sprite, true);
     this.cameras.main.setZoom(2);
@@ -1722,6 +1725,7 @@ export class GameScene extends Phaser.Scene {
         this.winterHintShown = true;
         this.showNotificationPopup('❄ 겨울이 왔습니다. 충분한 음식과 실내 공간을 확보하세요.', '#aaddff');
       }
+      this.tileRenderer?.applySeasonTint(season, this.tileRT);
     }
 
     // 모닥불 시스템 업데이트
@@ -1907,6 +1911,7 @@ export class GameScene extends Phaser.Scene {
     this.campfirePanel?.close();
     this.campfireSystem?.destroy();
     this.farmingSystem?.destroy();
+    this.tileRenderer?.clearMap();
     this.charRenderer?.destroy();
     this.logPanel?.close();
     this.notifySystem?.destroy();
@@ -1951,8 +1956,12 @@ export class GameScene extends Phaser.Scene {
     this.campfireSystem?.clearMap();
     this.campfirePanel?.close();
     this.farmingSystem?.clearMap();
+    this.tileRenderer?.clearMap();
     this.farmingSystem?.spawnWildCrops(mx, my, this.currentTiles, this.gameTime.season);
     this.farmingSystem?.markHarvestedWildCrops();
+    this.tileRenderer?.buildWaterSprites(this.currentTiles);
+    this.tileRenderer?.generateDecorations(this.currentTiles, this.seed, this.gameTime?.season ?? 'spring');
+    this.tileRenderer?.applySeasonTint(this.gameTime?.season ?? 'spring', this.tileRT);
     this.lastIndoorTileX = -1;
     this.lastIndoorTileY = -1;
     this.playerIsIndoor = false;
@@ -2003,17 +2012,32 @@ export class GameScene extends Phaser.Scene {
   }
 
   private renderTiles(tiles: TileType[][]) {
-    const groundKey: Record<TileType, string> = {
-      [TileType.Dirt]:  'tile_dirt',
-      [TileType.Water]: 'tile_water',
-      [TileType.Rock]:  'tile_rock',
-      [TileType.Tree]:  'tile_dirt',
-    };
-
-    // Draw ground tiles into RenderTexture (depth 0)
-    for (let ty = 0; ty < MAP_H; ty++)
-      for (let tx = 0; tx < MAP_W; tx++)
-        this.tileRT.draw(groundKey[tiles[ty][tx]], tx * TILE_SIZE, ty * TILE_SIZE);
+    for (let ty = 0; ty < MAP_H; ty++) {
+      for (let tx = 0; tx < MAP_W; tx++) {
+        const tile = tiles[ty][tx];
+        if (tile === TileType.Water) {
+          // Water tiles are rendered as animated sprites by TileRenderer
+          // Draw base dirt underneath so edges look right
+          this.tileRT.draw('tile_dirt', tx * TILE_SIZE, ty * TILE_SIZE);
+        } else if (tile === TileType.Rock) {
+          // Autotile rock
+          const n = tiles[ty-1]?.[tx] === TileType.Rock ? 1 : 0;
+          const e = tiles[ty]?.[tx+1] === TileType.Rock ? 2 : 0;
+          const s = tiles[ty+1]?.[tx] === TileType.Rock ? 4 : 0;
+          const w = tiles[ty]?.[tx-1] === TileType.Rock ? 8 : 0;
+          const autoIdx = n | e | s | w;
+          this.tileRT.draw(`tile_rock_auto_${autoIdx}`, tx * TILE_SIZE, ty * TILE_SIZE);
+        } else {
+          // Dirt / Tree base
+          // Check if near water → render sand instead
+          const nearWater = [[-1,0],[1,0],[0,-1],[0,1]].some(
+            ([dx,dy]) => tiles[ty+dy]?.[tx+dx] === TileType.Water
+          );
+          const key = nearWater ? 'tile_sand' : 'tile_dirt';
+          this.tileRT.draw(key, tx * TILE_SIZE, ty * TILE_SIZE);
+        }
+      }
+    }
 
     // Draw tree canopies as individual sprites for Y-based depth sorting
     for (let ty = 0; ty < MAP_H; ty++)
