@@ -56,6 +56,7 @@ export class DarknessLayer {
         const period = FLICKER_PERIOD[light.type] ?? 2.0;
         const noise = (Math.random() - 0.5) * amp * 0.3;
         r += Math.sin((time / 1000) * (Math.PI * 2 / period)) * amp + noise;
+        r = Math.max(0, r);
       }
 
       this.eraseLightCircle(sx, sy, r);
