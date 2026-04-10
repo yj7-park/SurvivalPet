@@ -103,6 +103,9 @@ export class MultiplayerSystem {
 
       this.enabled = true;
       this.isJoined = true;
+
+      // 입장 시스템 메시지
+      this.sendSystemMessage(`★ ${initData.name}님이 입장했습니다`);
     } catch (e) {
       console.warn('Multiplayer join failed:', e);
     }
@@ -111,6 +114,8 @@ export class MultiplayerSystem {
   async leaveRoom(): Promise<void> {
     if (!this.isJoined) return;
     try {
+      // 퇴장 시스템 메시지 (leaveRoom 전에 전송)
+      this.sendSystemMessage(`★ ${this.localName}님이 퇴장했습니다`);
       await set(ref(this.db, `rooms/${this.seed}/players/${this.playerId}/online`), false);
       await set(ref(this.db, `rooms/${this.seed}/players/${this.playerId}/lastSeen`), Date.now());
       off(this.playersRef);
@@ -226,6 +231,18 @@ export class MultiplayerSystem {
   onBuildingRemoved(cb: (id: string, mapX: number, mapY: number, tileX: number, tileY: number) => void): void { this.onBuildingRemovedCb = cb; }
   onTreeCut(cb: (mapX: number, mapY: number, tileX: number, tileY: number) => void): void { this.onTreeCutCb = cb; }
   onRockMined(cb: (mapX: number, mapY: number, tileX: number, tileY: number) => void): void { this.onRockMinedCb = cb; }
+  /** 시스템 메시지를 Firebase chat에 직접 전송 */
+  sendSystemMessage(text: string): void {
+    if (!this.db || !this.seed) return;
+    push(ref(this.db, `rooms/${this.seed}/chat`), {
+      playerId: 'system',
+      playerName: 'system',
+      text,
+      type: 'system',
+      timestamp: Date.now(),
+      color: '#aaaaaa',
+    });
+  }
 
   private listenPlayers(): void {
     onValue(this.playersRef, (snap) => {

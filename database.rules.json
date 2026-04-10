@@ -8,6 +8,13 @@
             ".write": "auth == null || auth != null"
           }
         },
+        "chat": {
+          ".read": true,
+          ".write": true,
+          "$msgId": {
+            ".validate": "newData.child('text').isString() && newData.child('text').val().length <= 60 && (newData.child('type').val() === 'user' ? newData.child('playerId').isString() : true)"
+          }
+        },
         "world": {
           "buildings": {
             ".read": "auth == null || auth != null",

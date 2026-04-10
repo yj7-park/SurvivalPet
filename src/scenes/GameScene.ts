@@ -47,6 +47,10 @@ import { CheatsheetPanel } from '../ui/CheatsheetPanel';
 import { DoorSystem } from '../systems/DoorSystem';
 import { RoofSystem } from '../systems/RoofSystem';
 import { LightSystem } from '../systems/LightSystem';
+import { ChatSystem } from '../systems/ChatSystem';
+import { ChatLog } from '../ui/ChatLog';
+import { ChatInput } from '../ui/ChatInput';
+import { ChatBubbleManager } from '../ui/ChatBubble';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -207,6 +211,13 @@ export class GameScene extends Phaser.Scene {
   // 조명 시스템
   lightSystem!: LightSystem;
   private torchWarnedOnce = false;
+
+  // 채팅 시스템 (멀티플레이 전용)
+  private chatSystem = new ChatSystem();
+  private chatLog!: ChatLog;
+  private chatInput!: ChatInput;
+  private chatBubbles!: ChatBubbleManager;
+  private prevFrenzyForChat = false;
 
   // Individual tree sprites for depth sorting
   private treeSprites = new Map<string, Phaser.GameObjects.Image>();
@@ -795,13 +806,14 @@ export class GameScene extends Phaser.Scene {
     });
 
     // Direction keys: clear queue on keyboard movement
-    this.input.keyboard!.on('keydown-UP', () => this.commandQueue.clearAll());
-    this.input.keyboard!.on('keydown-DOWN', () => this.commandQueue.clearAll());
-    this.input.keyboard!.on('keydown-LEFT', () => this.commandQueue.clearAll());
-    this.input.keyboard!.on('keydown-RIGHT', () => this.commandQueue.clearAll());
+    this.input.keyboard!.on('keydown-UP', () => { if (this.chatSystem.isInputActive()) return; this.commandQueue.clearAll(); });
+    this.input.keyboard!.on('keydown-DOWN', () => { if (this.chatSystem.isInputActive()) return; this.commandQueue.clearAll(); });
+    this.input.keyboard!.on('keydown-LEFT', () => { if (this.chatSystem.isInputActive()) return; this.commandQueue.clearAll(); });
+    this.input.keyboard!.on('keydown-RIGHT', () => { if (this.chatSystem.isInputActive()) return; this.commandQueue.clearAll(); });
 
     // E key: interact with nearest door
     this.input.keyboard!.on('keydown-E', () => {
+      if (this.chatSystem.isInputActive()) return;
       const nearest = this.doorSystem.getNearestInRange(this.player.sprite.x, this.player.sprite.y);
       if (nearest) {
         const struct = this.buildSystem.getAt(
@@ -813,18 +825,23 @@ export class GameScene extends Phaser.Scene {
     });
 
     // B key: toggle build panel
-    this.input.keyboard!.on('keydown-B', () => this.toggleBuildPanel());
+    this.input.keyboard!.on('keydown-B', () => { if (this.chatSystem.isInputActive()) return; this.toggleBuildPanel(); });
 
     // M key: toggle minimap
-    this.input.keyboard!.on('keydown-M', () => this.miniMap.toggle());
+    this.input.keyboard!.on('keydown-M', () => { if (this.chatSystem.isInputActive()) return; this.miniMap.toggle(); });
 
     // H key: toggle cheatsheet
-    this.input.keyboard!.on('keydown-H', () => this.cheatsheetPanel.toggle());
+    this.input.keyboard!.on('keydown-H', () => { if (this.chatSystem.isInputActive()) return; this.cheatsheetPanel.toggle(); });
 
     // V key: toggle inventory (handled by UIScene keyboard listener)
 
     // ESC: exit build mode, cancel interaction, close panels, unlock target, clear queue
     this.input.keyboard!.on('keydown-ESC', () => {
+      // 채팅 입력 중이면 입력창만 닫고 ESC 메뉴 열지 않음
+      if (this.chatSystem.isInputActive()) {
+        this.chatInput.close();
+        return;
+      }
       this.buildSystem.exitBuildMode();
       this.buildSystem.cancelBuild();
       this.buildAutoMoveTarget = null;
@@ -840,6 +857,32 @@ export class GameScene extends Phaser.Scene {
       this.commandQueue.clearAll();
       // 아무것도 열려있지 않으면 일시정지 메뉴 토글
       this.pauseMenu?.toggle();
+    });
+
+    // 채팅 UI 초기화 (멀티플레이 전용: 싱글플레이에서는 disable)
+    this.chatLog = new ChatLog(this);
+    this.chatInput = new ChatInput();
+    this.chatBubbles = new ChatBubbleManager(this);
+    if (!this.isMultiplayer) {
+      this.chatSystem.disable();
+    }
+    this.chatInput.onSend((text) => {
+      const ok = this.chatSystem.send(text, getOrCreatePlayerId(), this.characterName);
+      if (!ok && this.chatSystem.isDisabled() === false) {
+        this.showNotificationPopup('메시지를 너무 빠르게 보내고 있습니다', '#ffaa44');
+      }
+    });
+    this.chatInput.onClose(() => this.chatSystem.closeInput());
+    this.chatSystem.onInputActiveChanged((active) => {
+      if (active) this.chatLog.showFull();
+    });
+
+    // Enter key: open chat input (multiplayer only)
+    this.input.keyboard!.on('keydown-ENTER', () => {
+      if (this.chatSystem.isDisabled()) return;
+      if (this.chatSystem.isInputActive()) return;
+      this.chatSystem.openInput();
+      this.chatInput.open();
     });
 
     // Launch UI scene (zoom-independent HUD)
@@ -914,6 +957,24 @@ export class GameScene extends Phaser.Scene {
       mapX: this.mapX, mapY: this.mapY,
       hp: this.survival.hp, hunger: this.survival.hunger, fatigue: this.survival.fatigue,
       facing: this.player.dir, weapon: null,
+    });
+
+    // 채팅 시스템 초기화
+    const { initFirebase } = await import('../config/firebase');
+    const db = initFirebase();
+    this.chatSystem.init(this.seed, db);
+    this.chatSystem.onMessageReceived((msg) => {
+      // 로컬 플레이어 외 플레이어 말풍선
+      if (msg.type === 'user' && msg.playerId !== getOrCreatePlayerId()) {
+        const disp = this.remotePlayerDisplays.get(msg.playerId);
+        if (disp) {
+          this.chatBubbles.showBubble(msg.playerId, msg.text, disp.sprite.x, disp.sprite.y, disp.sprite.depth);
+        }
+      }
+      // 로컬 플레이어 말풍선
+      if (msg.type === 'user' && msg.playerId === getOrCreatePlayerId()) {
+        this.chatBubbles.showBubble(msg.playerId, msg.text, this.player.sprite.x, this.player.sprite.y, 2);
+      }
     });
 
     this.playerListPanel = new PlayerListPanel(
@@ -1242,7 +1303,8 @@ export class GameScene extends Phaser.Scene {
       || this.buildAutoMoveTarget !== null
       || this.mapTransition?.isTransitioning
       || this.isRepairing
-      || this.sleepSystem.isSleeping();
+      || this.sleepSystem.isSleeping()
+      || this.chatSystem.isInputActive();
 
     this.player.update(delta, suppressKeys, this.survival.fatigueSpeedMult * this.survival.hungerSpeedMult);
     this.interaction.update(delta);
@@ -1339,6 +1401,25 @@ export class GameScene extends Phaser.Scene {
         this.survival.isFrenzy, null,
       );
       this.multiplayerSys.update(delta);
+
+      // 광란 진입 시스템 메시지
+      if (this.survival.isFrenzy && !this.prevFrenzyForChat) {
+        this.multiplayerSys.sendSystemMessage(`⚡ ${this.characterName}님이 광란 상태에 돌입했습니다!`);
+      }
+      this.prevFrenzyForChat = this.survival.isFrenzy;
+    }
+
+    // 채팅 업데이트
+    this.chatSystem.update(delta);
+    this.chatBubbles.update(delta);
+
+    // 말풍선 위치 갱신 (로컬 플레이어)
+    this.chatBubbles.updateBubblePosition(getOrCreatePlayerId(), this.player.sprite.x, this.player.sprite.y);
+
+    // 채팅 로그 렌더링
+    if (!this.chatSystem.isDisabled()) {
+      if (this.chatLog.isHovered()) this.chatSystem.pauseFade();
+      this.chatLog.render(this.chatSystem.getMessages());
     }
   }
 
@@ -1449,6 +1530,9 @@ export class GameScene extends Phaser.Scene {
     this.closeKitchenPanel();
     this.combat?.destroy();
     this.commandQueueUI?.destroy();
+    this.chatInput?.destroy();
+    this.chatBubbles?.destroy();
+    this.chatLog?.destroy();
   }
 
   // ── Map ──────────────────────────────────────────────────
@@ -1641,6 +1725,7 @@ export class GameScene extends Phaser.Scene {
         .setColor(p.frenzy ? '#ff6666' : '#fff');
       display.statusLabel.setPosition(p.renderX, p.renderY - 12)
         .setText(`❤${Math.ceil(p.hp)} 🍖${Math.ceil(p.hunger)}${p.frenzy ? ' ⚡' : ''}`);
+      this.chatBubbles?.updateBubblePosition(p.id, p.renderX, p.renderY);
     }
     this.remotePlayerDisplays.forEach((disp, id) => {
       if (!seen.has(id)) {
@@ -2458,8 +2543,9 @@ export class GameScene extends Phaser.Scene {
       this.saveSystem.deleteSave(this.saveSystem.getLastUsedSlot());
     }
 
-    // 멀티플레이 퇴장
+    // 멀티플레이 퇴장 (사망 시스템 메시지 → leaveRoom 전에 전송)
     if (this.isMultiplayer) {
+      this.multiplayerSys.sendSystemMessage(`💀 ${this.characterName}님이 사망했습니다`);
       void this.multiplayerSys.leaveRoom();
     }
 
