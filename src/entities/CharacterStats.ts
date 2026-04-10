@@ -6,15 +6,26 @@ export class CharacterStats {
   readonly con: number;
   readonly int: number;
 
-  constructor(seed: string, playerId: string) {
-    const rng = new SeededRandom(`${seed}_stats_${playerId}`);
-    const s = [2, 2, 2, 2];
-    let rem = 12;
-    while (rem > 0) {
-      const i = rng.int(0, 3);
-      if (s[i] < 10) { s[i]++; rem--; }
+  constructor(
+    seed: string,
+    playerId: string,
+    overrideStats?: { str: number; agi: number; con: number; int: number },
+  ) {
+    if (overrideStats) {
+      this.str = overrideStats.str;
+      this.agi = overrideStats.agi;
+      this.con = overrideStats.con;
+      this.int = overrideStats.int;
+    } else {
+      const rng = new SeededRandom(`${seed}_stats_${playerId}`);
+      const s = [2, 2, 2, 2];
+      let rem = 12;
+      while (rem > 0) {
+        const i = rng.int(0, 3);
+        if (s[i] < 10) { s[i]++; rem--; }
+      }
+      [this.str, this.agi, this.con, this.int] = s;
     }
-    [this.str, this.agi, this.con, this.int] = s;
   }
 
   get moveSpeed(): number { return 120 + (this.agi - 5) * 12; }

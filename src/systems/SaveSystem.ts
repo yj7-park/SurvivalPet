@@ -7,6 +7,8 @@ export interface InventorySaveData {
 }
 
 export interface CharacterSaveData {
+  name: string;
+  appearance: number;
   mapX: number;
   mapY: number;
   x: number;
@@ -48,7 +50,10 @@ export interface WorldSaveData {
 
 export interface SettingsSaveData {
   autoPickup: boolean;
-  masterVolume: number;
+  autoSaveInterval: number;
+  showFPS: boolean;
+  showCoords: boolean;
+  language: string;
 }
 
 export interface SaveData {
@@ -125,6 +130,27 @@ export class SaveSystem {
   setLastUsedSlot(slot: number): void { this.lastUsedSlot = slot; }
   getLastUsedSlot(): number { return this.lastUsedSlot; }
 
+  saveSettings(settings: SettingsSaveData): void {
+    localStorage.setItem('sv_settings', JSON.stringify(settings));
+  }
+
+  loadSettings(): SettingsSaveData {
+    const defaults: SettingsSaveData = {
+      autoPickup: false,
+      autoSaveInterval: 5,
+      showFPS: false,
+      showCoords: false,
+      language: 'ko',
+    };
+    try {
+      const raw = localStorage.getItem('sv_settings');
+      if (!raw) return defaults;
+      return { ...defaults, ...JSON.parse(raw) };
+    } catch {
+      return defaults;
+    }
+  }
+
   private updateMeta(slot: number, data: SaveData): void {
     const meta: SlotMeta = {
       slot,
@@ -138,13 +164,20 @@ export class SaveSystem {
   }
 
   migrate(raw: unknown): SaveData {
-    const data = raw as { version?: number; character?: { proficiency?: unknown } };
+    const data = raw as { version?: number; character?: Record<string, unknown> };
     if (!data.version || data.version < 1) {
-      if (data.character && !data.character.proficiency) {
-        data.character.proficiency = {};
+      if (data.character && !data.character['proficiency']) {
+        data.character['proficiency'] = {};
       }
       (data as { version: number }).version = 1;
     }
-    return data as SaveData;
+    // Migrate: add name/appearance if missing
+    if (data.character && data.character['name'] === undefined) {
+      data.character['name'] = '생존자';
+    }
+    if (data.character && data.character['appearance'] === undefined) {
+      data.character['appearance'] = 0;
+    }
+    return data as unknown as SaveData;
   }
 }

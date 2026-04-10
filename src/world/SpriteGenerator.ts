@@ -145,7 +145,26 @@ function drawTree(): HTMLCanvasElement {
   return c;
 }
 
-function drawCharacter(dir: 'down' | 'up' | 'left' | 'right'): HTMLCanvasElement {
+interface CharPalette {
+  skin: string;
+  skinShadow: string;
+  shirt: string;
+  shirtHighlight: string;
+  hair: string;
+}
+
+export const CHAR_PALETTES: CharPalette[] = [
+  { skin: '#f5cba7', skinShadow: '#dba882', shirt: '#5d8aa8', shirtHighlight: '#7aaec8', hair: '#4a3728' },
+  { skin: '#c68642', skinShadow: '#a06030', shirt: '#8b6914', shirtHighlight: '#b08520', hair: '#1c1c1c' },
+  { skin: '#8d5524', skinShadow: '#6d3510', shirt: '#556b2f', shirtHighlight: '#6a8840', hair: '#d4a017' },
+];
+
+export function drawCharacterCanvas(paletteIdx: number): HTMLCanvasElement {
+  return drawCharacter('down', paletteIdx);
+}
+
+function drawCharacter(dir: 'down' | 'up' | 'left' | 'right', paletteIdx = 0): HTMLCanvasElement {
+  const pal = CHAR_PALETTES[paletteIdx] ?? CHAR_PALETTES[0];
   const c = makeCanvas(32, 32);
   const ctx = c.getContext('2d')!;
   ctx.clearRect(0, 0, 32, 32);
@@ -168,22 +187,22 @@ function drawCharacter(dir: 'down' | 'up' | 'left' | 'right'): HTMLCanvasElement
   ctx.fillRect(9, 28, 6, 3);
   ctx.fillRect(17, 28, 6, 3);
 
-  ctx.fillStyle = '#c84040';
+  ctx.fillStyle = pal.shirt;
   ctx.fillRect(9, 13, 14, 11);
-  ctx.fillStyle = '#e05050';
+  ctx.fillStyle = pal.shirtHighlight;
   ctx.fillRect(9, 13, 4, 11);
 
-  ctx.fillStyle = '#c84040';
+  ctx.fillStyle = pal.shirt;
   ctx.fillRect(5, 13, 4, 9);
   ctx.fillRect(23, 13, 4, 9);
-  ctx.fillStyle = '#f5c8a0';
+  ctx.fillStyle = pal.skin;
   ctx.fillRect(5, 21, 4, 3);
   ctx.fillRect(23, 21, 4, 3);
 
-  ctx.fillStyle = '#f5c8a0';
+  ctx.fillStyle = pal.skin;
   ctx.fillRect(13, 10, 6, 4);
   ctx.fillRect(9, 3, 14, 12);
-  ctx.fillStyle = '#e8b888';
+  ctx.fillStyle = pal.skinShadow;
   ctx.fillRect(9, 3, 1, 1);
   ctx.fillRect(22, 3, 1, 1);
   ctx.fillRect(9, 14, 1, 1);
@@ -206,7 +225,7 @@ function drawCharacter(dir: 'down' | 'up' | 'left' | 'right'): HTMLCanvasElement
     if (!isSide) ctx.fillRect(13, 11, 6, 1);
   }
 
-  ctx.fillStyle = '#3a2010';
+  ctx.fillStyle = pal.hair;
   ctx.fillRect(9, 3, 14, 3);
   ctx.fillRect(9, 3, 2, 5);
   if (!isBack) ctx.fillRect(21, 3, 2, 5);
@@ -1066,14 +1085,24 @@ function drawTiger(state: 'idle' | 'walk' | 'attack'): HTMLCanvasElement {
 }
 
 export function registerTextures(scene: Phaser.Scene): void {
+  if (scene.textures.exists('tile_dirt')) return;
+
   scene.textures.addCanvas('tile_dirt',  drawDirt());
   scene.textures.addCanvas('tile_water', drawWater());
   scene.textures.addCanvas('tile_rock',  drawRock());
   scene.textures.addCanvas('obj_tree',   drawTree());
-  scene.textures.addCanvas('char_down',  drawCharacter('down'));
-  scene.textures.addCanvas('char_up',    drawCharacter('up'));
-  scene.textures.addCanvas('char_left',  drawCharacter('left'));
-  scene.textures.addCanvas('char_right', drawCharacter('right'));
+
+  // Character sprites — 3 appearance palettes
+  for (let i = 0; i < 3; i++) {
+    for (const dir of ['down', 'up', 'left', 'right'] as const) {
+      scene.textures.addCanvas(`char_${i}_${dir}`, drawCharacter(dir, i));
+    }
+  }
+  // Backward-compat aliases (char_* = appearance 0)
+  scene.textures.addCanvas('char_down',  drawCharacter('down',  0));
+  scene.textures.addCanvas('char_up',    drawCharacter('up',    0));
+  scene.textures.addCanvas('char_left',  drawCharacter('left',  0));
+  scene.textures.addCanvas('char_right', drawCharacter('right', 0));
 
   // Items
   scene.textures.addCanvas('item_stone',            drawStoneItem());

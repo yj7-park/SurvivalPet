@@ -22,9 +22,12 @@ export class Player {
   };
   private tiles: TileType[][] | null = null;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, stats: CharacterStats) {
+  readonly appearance: number;
+
+  constructor(scene: Phaser.Scene, x: number, y: number, stats: CharacterStats, appearance = 0) {
     this.stats = stats;
-    this.sprite = scene.add.sprite(x, y, 'char_down').setDepth(1);
+    this.appearance = appearance;
+    this.sprite = scene.add.sprite(x, y, `char_${appearance}_down`).setDepth(1);
     this.cursors = scene.input.keyboard!.createCursorKeys();
     this.wasd = {
       up:    scene.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.W),
@@ -84,7 +87,7 @@ export class Player {
 
     if (newDir !== this.dir) {
       this.dir = newDir;
-      this.sprite.setTexture(`char_${this.dir}`);
+      this.sprite.setTexture(`char_${this.appearance}_${this.dir}`);
     }
   }
 

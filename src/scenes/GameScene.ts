@@ -103,6 +103,9 @@ export class GameScene extends Phaser.Scene {
   private saveSystem = new SaveSystem();
   private pauseMenu!: PauseMenu;
   private pendingSaveData: SaveData | null = null;
+  private pendingCharStats?: { str: number; agi: number; con: number; int: number };
+  private pendingAppearance = 0;
+  private characterName = '생존자';
   private playtimeMs = 0;
   private autoSaveTimer = 0;
   private readonly AUTO_SAVE_INTERVAL_MS = 5 * 60 * 1000;
@@ -140,17 +143,33 @@ export class GameScene extends Phaser.Scene {
 
   constructor() { super({ key: 'GameScene' }); }
 
-  init(data: { seed: string; saveData?: SaveData }) {
+  init(data: {
+    seed: string;
+    saveData?: SaveData;
+    characterName?: string;
+    appearance?: number;
+    characterStats?: { str: number; agi: number; con: number; int: number };
+    saveSlot?: number;
+  }) {
     this.seed = data.seed;
     this.pendingSaveData = data.saveData ?? null;
     if (data.saveData) {
       this.mapX = data.saveData.character.mapX;
       this.mapY = data.saveData.character.mapY;
       this.playtimeMs = data.saveData.playtime;
+      this.pendingCharStats = data.saveData.character.stats;
+      this.pendingAppearance = data.saveData.character.appearance ?? 0;
+      this.characterName = data.saveData.character.name ?? '생존자';
     } else {
       this.mapX = 0;
       this.mapY = 0;
       this.playtimeMs = 0;
+      this.pendingCharStats = data.characterStats;
+      this.pendingAppearance = data.appearance ?? 0;
+      this.characterName = data.characterName ?? '생존자';
+    }
+    if (data.saveSlot !== undefined) {
+      this.saveSystem.setLastUsedSlot(data.saveSlot);
     }
     this.autoSaveTimer = 0;
     this.clearedTrees = [];
@@ -161,7 +180,7 @@ export class GameScene extends Phaser.Scene {
     registerTextures(this);
 
     const playerId = getOrCreatePlayerId();
-    this.charStats = new CharacterStats(this.seed, playerId);
+    this.charStats = new CharacterStats(this.seed, playerId, this.pendingCharStats);
     this.survival = new SurvivalStats(this.charStats);
     this.gameTime = new GameTime();
     this.weather = new WeatherSystem(this, this.gameTime, this.seed);
@@ -174,7 +193,7 @@ export class GameScene extends Phaser.Scene {
     this.loadMap(startMx, startMy);
 
     const start = this.findStartTile(this.currentTiles);
-    this.player = new Player(this, start.x, start.y, this.charStats);
+    this.player = new Player(this, start.x, start.y, this.charStats, this.pendingAppearance);
     this.player.setTiles(this.currentTiles);
     this.player.sprite.setDepth(this.player.sprite.y);
 
@@ -536,7 +555,7 @@ export class GameScene extends Phaser.Scene {
       },
       () => {
         this.scene.stop('UIScene');
-        this.scene.start('MainMenuScene');
+        this.scene.start('TitleScene');
       },
     );
 
@@ -1593,6 +1612,8 @@ export class GameScene extends Phaser.Scene {
       playtime: this.playtimeMs,
       seed: this.seed,
       character: {
+        name: this.characterName,
+        appearance: this.pendingAppearance,
         mapX: this.mapX,
         mapY: this.mapY,
         x: this.player.sprite.x,
@@ -1632,7 +1653,7 @@ export class GameScene extends Phaser.Scene {
           realElapsedMs: this.gameTime.getElapsed(),
         },
       },
-      settings: { autoPickup: true, masterVolume: 1.0 },
+      settings: this.saveSystem.loadSettings(),
     };
   }
 

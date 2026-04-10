@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { MainMenuScene } from './scenes/MainMenuScene';
+import { TitleScene } from './scenes/TitleScene';
+import { LoadingScene } from './scenes/LoadingScene';
 import { GameScene } from './scenes/GameScene';
 import { UIScene } from './scenes/UIScene';
 
@@ -12,7 +13,7 @@ const config: Phaser.Types.Core.GameConfig = {
     default: 'arcade',
     arcade: { gravity: { x: 0, y: 0 }, debug: false },
   },
-  scene: [MainMenuScene, GameScene, UIScene],
+  scene: [TitleScene, LoadingScene, GameScene, UIScene],
   parent: document.body,
 };
 

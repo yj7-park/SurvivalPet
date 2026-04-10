@@ -68,8 +68,7 @@ export class PauseMenu {
     overlay.appendChild(makeBtn('저장하기', '#2a4a2a', () => this.openSavePanel()));
     overlay.appendChild(makeBtn('불러오기', '#2a3a4a', () => this.openLoadPanel()));
     overlay.appendChild(makeBtn('타이틀로', '#3a2a2a', () => {
-      this.close();
-      this.onReturnToTitle();
+      this.openReturnConfirm();
     }));
 
     // Close on outside click
@@ -94,6 +93,61 @@ export class PauseMenu {
   }
 
   isOpen(): boolean { return this.overlay !== null; }
+
+  private openReturnConfirm(): void {
+    this.subPanel?.remove();
+    const panel = document.createElement('div');
+    panel.style.cssText = `
+      position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+      background:rgba(10,15,25,0.97);border:1px solid #664;
+      border-radius:8px;padding:20px;z-index:950;color:#eee;
+      font:12px monospace;min-width:300px;text-align:center;
+    `;
+    panel.innerHTML = `
+      <div style="font-size:13px;color:#e2b96f;margin-bottom:8px;font-weight:bold">타이틀로 돌아가기</div>
+      <div style="color:#aaa;margin-bottom:16px;line-height:1.6">
+        타이틀 화면으로 돌아가시겠습니까?<br>
+        저장하지 않은 진행 상황은 사라집니다.
+      </div>
+    `;
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:8px;justify-content:center;flex-wrap:wrap';
+
+    const makeConfirmBtn = (label: string, bg: string, onClick: () => void) => {
+      const btn = document.createElement('button');
+      btn.textContent = label;
+      btn.style.cssText = `padding:8px 14px;background:${bg};color:#fff;border:none;border-radius:4px;cursor:pointer;font:11px monospace`;
+      btn.onclick = onClick;
+      return btn;
+    };
+
+    btnRow.appendChild(makeConfirmBtn('저장 후 타이틀로', '#2a5a3a', () => {
+      panel.remove();
+      this.subPanel = null;
+      // Save to last used slot then return
+      const data = this.onCollectSaveData();
+      data.savedAt = Date.now();
+      this.saveSystem.saveAuto(data);
+      this.close();
+      this.onReturnToTitle();
+    }));
+    btnRow.appendChild(makeConfirmBtn('저장 없이 나가기', '#5a2a2a', () => {
+      if (confirm('정말로 저장하지 않고 나가시겠습니까?')) {
+        panel.remove();
+        this.subPanel = null;
+        this.close();
+        this.onReturnToTitle();
+      }
+    }));
+    btnRow.appendChild(makeConfirmBtn('취소', '#333', () => {
+      panel.remove();
+      this.subPanel = null;
+    }));
+
+    panel.appendChild(btnRow);
+    document.body.appendChild(panel);
+    this.subPanel = panel;
+  }
 
   private openSavePanel(): void {
     this.subPanel?.remove();
