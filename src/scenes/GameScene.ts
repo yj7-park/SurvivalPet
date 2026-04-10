@@ -77,6 +77,8 @@ import { StarLayer } from '../rendering/StarLayer';
 import { PostFxSystem } from '../systems/PostFxSystem';
 import { MultiplayerVisualSystem } from '../systems/MultiplayerVisualSystem';
 import { EMOTE_COMMANDS } from '../systems/RespawnEffect';
+import { playProfLevelUpEffect } from '../systems/ProfLevelUpEffect';
+import { playResearchUnlockEffect } from '../systems/RecipeUnlockEffect';
 import { SkyLayer } from '../systems/SkyLayer';
 import { WarmLightLayer } from '../systems/WarmLightLayer';
 import { FlickerSystem } from '../systems/FlickerSystem';
@@ -594,6 +596,7 @@ export class GameScene extends Phaser.Scene {
       const px = this.player?.sprite?.x ?? 0;
       const py = this.player?.sprite?.y ?? 0;
       this.feedbackRenderer?.playLevelUpEffect(px, py, type, lvl);
+      playProfLevelUpEffect(this, type, lvl, px, py);
     });
 
     // XP 획득 팝업
@@ -1558,6 +1561,7 @@ export class GameScene extends Phaser.Scene {
       this.actionSystem.onActionDone('research', this.survival);
       this.showNotificationPopup(`✅ ${completedResearch.label.replace('🔬 ', '')} 연구 완료!`, '#88ffaa');
       if (this.workbenchPanel) this.refreshWorkbenchPanel(this.workbenchPanel, 'research');
+      playResearchUnlockEffect(this, { name: completedResearch.label.replace('🔬 ', ''), icon: '🔬' });
     }
     if (this.research.isInProgress()) {
       const wpos = this.research.getWorkbenchPos();
