@@ -1,3 +1,5 @@
+import { UI_COLORS } from '../config/uiColors';
+
 export class MiniMapPanel {
   private overlay: HTMLDivElement | null = null;
   private canvas: HTMLCanvasElement | null = null;
@@ -19,11 +21,11 @@ export class MiniMapPanel {
     const overlay = document.createElement('div');
     overlay.style.cssText = `
       position:fixed;bottom:16px;right:16px;
-      background:rgba(5,10,5,0.9);border:1px solid #446;
+      background:${UI_COLORS.panelBg};border:1px solid ${UI_COLORS.panelBorder};
       border-radius:6px;padding:10px;z-index:200;
     `;
     overlay.innerHTML = `
-      <div style="color:#aaa;font:10px monospace;margin-bottom:6px;text-align:center">지도 (M)</div>
+      <div style="color:${UI_COLORS.textSecondary};font:10px 'Courier New',monospace;margin-bottom:6px;text-align:center">지도 (M)</div>
     `;
 
     const canvas = document.createElement('canvas');
@@ -63,11 +65,11 @@ export class MiniMapPanel {
         const isVisited = visited.has(`${mx},${my}`);
 
         if (isCurrent) {
-          ctx.fillStyle = this.blinkOn ? '#6aee6a' : '#3a9a3a';
+          ctx.fillStyle = this.blinkOn ? '#ffd060' : '#c09030';
         } else if (isVisited) {
-          ctx.fillStyle = '#3a5f3a';
+          ctx.fillStyle = '#4a6030';
         } else {
-          ctx.fillStyle = '#111';
+          ctx.fillStyle = '#0e0c08';
         }
         ctx.fillRect(mx * CELL, my * CELL, CELL - 1, CELL - 1);
       }

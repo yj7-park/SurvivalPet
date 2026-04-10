@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import { InventoryUI } from '../systems/InventoryUI';
 import { EquipmentPanel } from '../systems/EquipmentPanel';
+import { UIRenderer } from '../ui/UIRenderer';
+import { UI_COLORS } from '../config/uiColors';
 
 // Runtime reference only — no import to avoid circular dep
 type GameSceneRef = {
@@ -42,6 +44,8 @@ export class UIScene extends Phaser.Scene {
     fatigue: { bg: Phaser.GameObjects.Rectangle; fill: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text };
     action:  { bg: Phaser.GameObjects.Rectangle; fill: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text };
   };
+  private hudGaugeGfx!: Phaser.GameObjects.Graphics;
+  private hudGaugeValues = { hp: 0, maxHp: 1, hunger: 0, fatigue: 0, action: 0 };
   private hudFrenzyCountdown!: Phaser.GameObjects.Text;
   private hudCharStats!: Phaser.GameObjects.Text;
   private hudInventoryText!: Phaser.GameObjects.Text;
@@ -91,20 +95,23 @@ export class UIScene extends Phaser.Scene {
     const BAR_W = 90, BAR_H = 7;
     const bx = W - 110, by0 = 12;
 
+    // Graphics-based improved gauges
+    this.hudGaugeGfx = this.add.graphics().setDepth(102).setScrollFactor(0);
+
     const makebar = (y: number, color: number, labelStr: string) => {
-      const bg   = this.add.rectangle(bx, y, BAR_W, BAR_H, 0x222222).setDepth(100).setOrigin(0, 0.5);
-      const fill = this.add.rectangle(bx, y, BAR_W, BAR_H, color).setDepth(101).setOrigin(0, 0.5);
+      const bg   = this.add.rectangle(bx, y, BAR_W, BAR_H, 0x222222, 0).setDepth(100).setOrigin(0, 0.5);
+      const fill = this.add.rectangle(bx, y, BAR_W, BAR_H, color, 0).setDepth(101).setOrigin(0, 0.5);
       const lbl  = this.add.text(bx - 52, y - 4, labelStr, {
-        fontSize: '9px', color: '#cccccc', fontFamily: 'monospace',
+        fontSize: '9px', color: UI_COLORS.textSecondary, fontFamily: 'Courier New',
       }).setDepth(100);
       return { bg, fill, label: lbl };
     };
 
     this.hudStatBars = {
-      hp:      makebar(by0,      0xe05050, 'HP'),
-      hunger:  makebar(by0 + 14, 0xe0a020, 'Hunger'),
-      fatigue: makebar(by0 + 28, 0x4080e0, 'Fatigue'),
-      action:  makebar(by0 + 42, 0x40c060, 'Action'),
+      hp:      makebar(by0,      UI_COLORS.gaugeHpHex,      'HP'),
+      hunger:  makebar(by0 + 14, UI_COLORS.gaugeHungerHex,  'Hunger'),
+      fatigue: makebar(by0 + 28, UI_COLORS.gaugeFatigueHex, 'Fatigue'),
+      action:  makebar(by0 + 42, UI_COLORS.gaugeActionHex,  'Action'),
     };
 
     // 멀티플레이 접속자 수 (우상단, 스탯 바 아래)
@@ -214,23 +221,11 @@ export class UIScene extends Phaser.Scene {
       this.hudWeatherTooltip.setVisible(false);
     }
 
-    // 스탯 바
-    this.hudStatBars.hp.fill.setSize(BAR_W * (s.hp / s.maxHp), 7);
-    this.hudStatBars.hunger.fill.setSize(BAR_W * (s.hunger / 100), 7);
-    this.hudStatBars.fatigue.fill.setSize(BAR_W * (s.fatigue / 100), 7);
-    this.hudStatBars.action.fill.setSize(BAR_W * (s.action / 100), 7);
-
     // 허기 게이지 색상 (정상→배고픔→허기→굶주림)
     const hv = s.hunger;
-    const hungerColor = hv > 40 ? 0xe0a020 : hv > 20 ? 0xe0c020 : hv > 10 ? 0xe07010 : 0xe03030;
-    this.hudStatBars.hunger.fill.setFillStyle(hungerColor);
-    // 굶주림 단계 깜빡임
-    if (hv <= 10 && hv > 0) {
-      const blinkH = Math.floor(this.time.now / 300) % 2 === 0;
-      this.hudStatBars.hunger.fill.setVisible(blinkH);
-    } else {
-      this.hudStatBars.hunger.fill.setVisible(true);
-    }
+    const hungerColor = hv > 40 ? UI_COLORS.gaugeHungerHex : hv > 20 ? 0xe0c020 : hv > 10 ? 0xe07010 : 0xe03030;
+    // 굶주림 단계 깜빡임 — gaugeGfx로 처리하므로 fill visibility 활용 안함
+    const hungerVisible = !(hv <= 10 && hv > 0 && Math.floor(this.time.now / 300) % 2 === 1);
 
     // 식중독 아이콘
     const isPoisoned = gs.hungerSystem?.isPoisoned() ?? false;
@@ -238,8 +233,27 @@ export class UIScene extends Phaser.Scene {
 
     // 행복 수치 게이지 색상 (정상→주의→경고→위험)
     const av = s.action;
-    const actionColor = av > 40 ? 0x40c060 : av > 20 ? 0xe0c020 : av > 10 ? 0xe06020 : 0xe03030;
-    this.hudStatBars.action.fill.setFillStyle(actionColor);
+    const actionColor = av > 40 ? UI_COLORS.gaugeActionHex : av > 20 ? 0xe0c020 : av > 10 ? 0xe06020 : 0xe03030;
+    // 광란 시 action 깜빡임
+    const actionVisible = !(s.isFrenzy && Math.floor(this.time.now / 300) % 2 === 1);
+
+    // HP 게이지 색 (저체력 시 밝게)
+    const hpRatio = s.hp / s.maxHp;
+    const hpColor = hpRatio <= 0.2 ? UI_COLORS.gaugeHpHex : UI_COLORS.gaugeHpHex;
+
+    // Graphics 기반 게이지 다시 그리기
+    const W2 = this.scale.width;
+    const bx2 = W2 - 110, by02 = 12;
+    this.hudGaugeGfx.clear();
+    // Panel background
+    UIRenderer.drawPanel(this.hudGaugeGfx, bx2 - 58, by02 - 8, 162, 68);
+    // Gauges
+    UIRenderer.drawGauge(this.hudGaugeGfx, bx2, by02,      s.hp,     s.maxHp, hpColor,      BAR_W, 7);
+    if (hungerVisible)
+      UIRenderer.drawGauge(this.hudGaugeGfx, bx2, by02 + 14, s.hunger, 100,    hungerColor,  BAR_W, 7);
+    UIRenderer.drawGauge(this.hudGaugeGfx, bx2, by02 + 28,  s.fatigue, 100,   UI_COLORS.gaugeFatigueHex, BAR_W, 7);
+    if (actionVisible)
+      UIRenderer.drawGauge(this.hudGaugeGfx, bx2, by02 + 42, s.action,  100,   actionColor,  BAR_W, 7);
 
     // 광란 진입/종료 알림
     if (s.isFrenzy && !this.prevFrenzy) {
@@ -257,12 +271,8 @@ export class UIScene extends Phaser.Scene {
       const mm = String(Math.floor(sec / 60)).padStart(2, '0');
       const ss = String(sec % 60).padStart(2, '0');
       this.hudFrenzyCountdown.setText(`⚡ 광란  [${mm}:${ss}]`).setVisible(true);
-      // 게이지 깜빡임
-      const blink = Math.floor(this.time.now / 300) % 2 === 0;
-      this.hudStatBars.action.fill.setVisible(blink);
     } else {
       this.hudFrenzyCountdown.setVisible(false);
-      this.hudStatBars.action.fill.setVisible(true);
     }
 
     const debuff = gs.hungerSystem?.getMaxHpDebuff() ?? 0;
@@ -270,7 +280,7 @@ export class UIScene extends Phaser.Scene {
     const hpLabel = debuff > 0
       ? `HP ${Math.ceil(s.hp)}/${s.maxHp} (↓${debuff})`
       : `HP ${Math.ceil(s.hp)}/${s.maxHp}`;
-    this.hudStatBars.hp.label.setText(hpLabel);
+    this.hudStatBars.hp.label.setText(hpLabel).setColor(hpRatio <= 0.2 ? UI_COLORS.textDanger : UI_COLORS.textSecondary);
     void baseMaxHp;
     this.hudStatBars.hunger.label.setText('Hunger');
     this.hudStatBars.fatigue.label.setText('Fatigue');

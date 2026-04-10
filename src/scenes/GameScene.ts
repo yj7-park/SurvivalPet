@@ -65,6 +65,7 @@ import { CharacterRenderer } from '../rendering/CharacterRenderer';
 import { TileRenderer, DIRT_TINTS } from '../rendering/TileRenderer';
 import { TreeRenderer } from '../rendering/TreeRenderer';
 import { ObjectRenderer } from '../rendering/ObjectRenderer';
+import { UI_COLORS, PANEL_CSS, BTN_CSS } from '../config/uiColors';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -2160,16 +2161,14 @@ export class GameScene extends Phaser.Scene {
     panel.id = 'build-panel';
     panel.style.cssText = `
       position: fixed; bottom: 60px; right: 10px; width: 240px;
-      background: rgba(15,20,30,0.92); border: 1px solid #446;
-      border-radius: 6px; padding: 10px; z-index: 200; color: #eee;
-      font: 12px monospace;
+      ${PANEL_CSS} padding: 10px; z-index: 200;
     `;
 
-    panel.innerHTML = `<div style="font-weight:bold;margin-bottom:8px;color:#e2b96f">🔨 건설</div>
+    panel.innerHTML = `<div style="font-weight:bold;margin-bottom:8px;color:${UI_COLORS.textWarning}">🔨 건설</div>
       <div style="display:flex;gap:6px;margin-bottom:8px">
-        <button id="bp-wood" style="flex:1;padding:4px;background:#a0622a;color:#fff;border:none;border-radius:3px;cursor:pointer">목재</button>
-        <button id="bp-stone" style="flex:1;padding:4px;background:#606060;color:#fff;border:none;border-radius:3px;cursor:pointer">석재</button>
-        <button id="bp-etc" style="flex:1;padding:4px;background:#444;color:#fff;border:none;border-radius:3px;cursor:pointer">기타</button>
+        <button id="bp-wood" style="flex:1;padding:4px;background:rgba(120,70,20,0.9);color:${UI_COLORS.textPrimary};border:1px solid ${UI_COLORS.btnBorder};border-radius:3px;cursor:pointer;font:10px 'Courier New',monospace">목재</button>
+        <button id="bp-stone" style="flex:1;padding:4px;background:rgba(70,70,70,0.9);color:${UI_COLORS.textPrimary};border:1px solid ${UI_COLORS.panelBorder};border-radius:3px;cursor:pointer;font:10px 'Courier New',monospace">석재</button>
+        <button id="bp-etc" style="flex:1;padding:4px;background:${UI_COLORS.btnBg};color:${UI_COLORS.textPrimary};border:1px solid ${UI_COLORS.panelBorder};border-radius:3px;cursor:pointer;font:10px 'Courier New',monospace">기타</button>
       </div>
       <div id="bp-items" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-bottom:8px"></div>
       <div id="bp-info" style="font-size:10px;color:#aaa;min-height:30px"></div>`;
@@ -2204,9 +2203,11 @@ export class GameScene extends Phaser.Scene {
       const btn = document.createElement('button');
       btn.textContent = def.label;
       btn.style.cssText = `
-        padding:6px 2px; background:${canAfford ? '#2a4a2a' : '#333'};
-        color:${canAfford ? '#aaffaa' : '#888'}; border:1px solid #446;
-        border-radius:3px; cursor:pointer; font:11px monospace;
+        padding:6px 2px;
+        background:${canAfford ? 'rgba(30,60,20,0.90)' : UI_COLORS.btnBg};
+        color:${canAfford ? UI_COLORS.textSuccess : UI_COLORS.textDisabled};
+        border:1px solid ${canAfford ? '#3a6a20' : UI_COLORS.slotBorder};
+        border-radius:3px; cursor:pointer; font:10px 'Courier New',monospace;
       `;
       const timeSec = (this.charStats.buildTime(def.baseTimeSec) * (mat === 'stone' ? 2 : 1) / 1000).toFixed(1);
       btn.title = `소요: ${timeSec}s`;
@@ -2234,9 +2235,11 @@ export class GameScene extends Phaser.Scene {
     const btn = document.createElement('button');
     btn.textContent = '🔥 모닥불';
     btn.style.cssText = `
-      padding:6px 2px; background:${canAfford && !atMax ? '#5a2000' : '#333'};
-      color:${canAfford && !atMax ? '#ffcc88' : '#888'}; border:1px solid #c86400;
-      border-radius:3px; cursor:pointer; font:11px monospace;
+      padding:6px 2px;
+      background:${canAfford && !atMax ? 'rgba(90,32,0,0.90)' : UI_COLORS.btnBg};
+      color:${canAfford && !atMax ? '#ffcc88' : UI_COLORS.textDisabled};
+      border:1px solid ${canAfford && !atMax ? '#c86400' : UI_COLORS.slotBorder};
+      border-radius:3px; cursor:pointer; font:10px 'Courier New',monospace;
     `;
     btn.title = '목재 ×3, 즉시 설치';
     btn.addEventListener('mouseenter', () => {
@@ -2301,13 +2304,13 @@ export class GameScene extends Phaser.Scene {
     const menu = document.createElement('div');
     menu.style.cssText = `
       position:fixed; left:${sx}px; top:${sy}px;
-      background:rgba(10,15,25,0.96); border:1px solid #446;
-      border-radius:4px; padding:4px 0; z-index:300; font:12px monospace; color:#eee; min-width:120px;
+      background:${UI_COLORS.panelBg}; border:1px solid ${UI_COLORS.panelBorder};
+      border-radius:6px; padding:4px 0; z-index:300; font:11px 'Courier New',monospace; color:${UI_COLORS.textPrimary}; min-width:140px;
     `;
     const item = document.createElement('div');
     item.style.cssText = 'padding:6px 12px;cursor:pointer;';
     item.textContent = '🌾 수확하기';
-    item.addEventListener('mouseenter', () => { item.style.background = '#1a2a3a'; });
+    item.addEventListener('mouseenter', () => { item.style.background = UI_COLORS.slotHover; });
     item.addEventListener('mouseleave', () => { item.style.background = ''; });
     item.addEventListener('click', () => {
       const dist = Math.hypot(
@@ -2329,7 +2332,7 @@ export class GameScene extends Phaser.Scene {
     const cancel = document.createElement('div');
     cancel.style.cssText = 'padding:6px 12px;cursor:pointer;';
     cancel.textContent = '❌ 취소';
-    cancel.addEventListener('mouseenter', () => { cancel.style.background = '#1a2a3a'; });
+    cancel.addEventListener('mouseenter', () => { cancel.style.background = UI_COLORS.slotHover; });
     cancel.addEventListener('mouseleave', () => { cancel.style.background = ''; });
     cancel.addEventListener('click', () => this.closeContextMenu());
     menu.appendChild(cancel);
@@ -2349,13 +2352,13 @@ export class GameScene extends Phaser.Scene {
     const menu = document.createElement('div');
     menu.style.cssText = `
       position:fixed; left:${sx}px; top:${sy}px;
-      background:rgba(10,15,25,0.96); border:1px solid #446;
-      border-radius:4px; padding:4px 0; z-index:300; font:12px monospace; color:#eee; min-width:120px;
+      background:${UI_COLORS.panelBg}; border:1px solid ${UI_COLORS.panelBorder};
+      border-radius:6px; padding:4px 0; z-index:300; font:11px 'Courier New',monospace; color:${UI_COLORS.textPrimary}; min-width:140px;
     `;
     const item = document.createElement('div');
     item.style.cssText = 'padding:6px 12px;cursor:pointer;';
     item.textContent = '🌿 야생 작물 수확';
-    item.addEventListener('mouseenter', () => { item.style.background = '#1a2a3a'; });
+    item.addEventListener('mouseenter', () => { item.style.background = UI_COLORS.slotHover; });
     item.addEventListener('mouseleave', () => { item.style.background = ''; });
     item.addEventListener('click', () => {
       const ok = this.farmingSystem.harvestWild(wildCropId, this.inventory);
@@ -2366,7 +2369,7 @@ export class GameScene extends Phaser.Scene {
     const cancel = document.createElement('div');
     cancel.style.cssText = 'padding:6px 12px;cursor:pointer;';
     cancel.textContent = '❌ 취소';
-    cancel.addEventListener('mouseenter', () => { cancel.style.background = '#1a2a3a'; });
+    cancel.addEventListener('mouseenter', () => { cancel.style.background = UI_COLORS.slotHover; });
     cancel.addEventListener('mouseleave', () => { cancel.style.background = ''; });
     cancel.addEventListener('click', () => this.closeContextMenu());
     menu.appendChild(cancel);
@@ -2387,16 +2390,16 @@ export class GameScene extends Phaser.Scene {
     const menu = document.createElement('div');
     menu.style.cssText = `
       position: fixed; left: ${screenX}px; top: ${screenY}px;
-      background: rgba(10,15,25,0.96); border: 1px solid #446;
-      border-radius: 4px; padding: 4px 0; z-index: 300;
-      font: 12px monospace; color: #eee; min-width: 120px;
+      background: ${UI_COLORS.panelBg}; border: 1px solid ${UI_COLORS.panelBorder};
+      border-radius: 6px; padding: 4px 0; z-index: 300;
+      font: 11px 'Courier New',monospace; color: ${UI_COLORS.textPrimary}; min-width: 140px;
     `;
 
     const makeItem = (icon: string, label: string, onClick: () => void) => {
       const item = document.createElement('div');
       item.style.cssText = 'padding:6px 12px;cursor:pointer;';
       item.textContent = `${icon} ${label}`;
-      item.addEventListener('mouseenter', () => { item.style.background = '#1a2a3a'; });
+      item.addEventListener('mouseenter', () => { item.style.background = UI_COLORS.slotHover; });
       item.addEventListener('mouseleave', () => { item.style.background = ''; });
       item.addEventListener('click', () => { onClick(); this.closeContextMenu(); });
       menu.appendChild(item);
