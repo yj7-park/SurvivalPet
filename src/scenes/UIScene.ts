@@ -99,6 +99,7 @@ export class UIScene extends Phaser.Scene {
       this, gs.inventory, gs.survival, gs.combat, gs.charStats,
       () => gs.isNearTable(),
       gs.equipmentSystem,
+      gs.proficiency,
     );
 
     this.equipmentPanel = new EquipmentPanel(

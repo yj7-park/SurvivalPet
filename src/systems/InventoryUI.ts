@@ -6,6 +6,8 @@ import { WEAPONS, calcDamage, calcCooldownMs } from '../config/weapons';
 import { CharacterStats } from '../entities/CharacterStats';
 import { EquipmentSystem } from './EquipmentSystem';
 import { ARMOR_DEFS, SHIELD_DEFS } from '../config/equipment';
+import { RECIPE_ITEMS, RECIPE_ITEM_IDS } from '../config/recipeItems';
+import { ProficiencySystem, PROF_NAMES } from './ProficiencySystem';
 
 const STACK_LIMITS: Record<string, number> = {
   item_wood: 99,
@@ -25,8 +27,16 @@ const STACK_LIMITS: Record<string, number> = {
   item_armor_hide: 1,
   item_armor_wood: 1,
   item_armor_stone: 1,
+  item_armor_iron: 1,
   item_shield_wood: 1,
   item_shield_stone: 1,
+  item_sword_iron: 1,
+  item_fish_stew: 10,
+  item_meat_stew: 10,
+  item_recipe_fish_stew: 1,
+  item_recipe_meat_stew: 1,
+  item_blueprint_iron_sword: 1,
+  item_blueprint_armor: 1,
 };
 const DEFAULT_STACK = 99;
 
@@ -48,12 +58,21 @@ const ITEM_NAMES: Record<string, string> = {
   item_armor_hide:      '가죽 갑옷',
   item_armor_wood:      '목재 갑옷',
   item_armor_stone:     '석재 갑옷',
+  item_armor_iron:      '철제 갑옷',
   item_shield_wood:     '목재 방패',
   item_shield_stone:    '석재 방패',
+  item_sword_iron:      '철제 칼',
+  item_fish_stew:       '생선 스튜',
+  item_meat_stew:       '고기 스튜',
+  item_recipe_fish_stew:     '생선 스튜 레시피',
+  item_recipe_meat_stew:     '고기 스튜 레시피',
+  item_blueprint_iron_sword: '철제칼 도면',
+  item_blueprint_armor:      '갑옷 도면',
 };
 
-const WEAPON_ITEM_IDS = new Set(['item_bow', 'item_sword_wood', 'item_sword_stone']);
-const FOOD_ITEM_IDS   = new Set(['item_cooked_meat', 'item_cooked_fish', 'item_raw_meat', 'item_fish']);
+const WEAPON_ITEM_IDS = new Set(['item_bow', 'item_sword_wood', 'item_sword_stone', 'item_sword_iron']);
+const FOOD_ITEM_IDS   = new Set(['item_cooked_meat', 'item_cooked_fish', 'item_raw_meat', 'item_fish',
+                                  'item_fish_stew', 'item_meat_stew']);
 const ARMOR_ITEM_IDS  = new Set(Object.keys(ARMOR_DEFS));
 const SHIELD_ITEM_IDS = new Set(Object.keys(SHIELD_DEFS));
 
@@ -62,6 +81,13 @@ const FOOD_RESTORE: Record<string, number> = {
   item_cooked_fish: 25,
   item_raw_meat:    10,
   item_cooked_meat: 35,
+  item_fish_stew:   40,
+  item_meat_stew:   50,
+};
+
+const FOOD_HEAL_HP: Record<string, number> = {
+  item_fish_stew:  30,
+  item_meat_stew:  20,
 };
 
 export class InventoryUI {
@@ -73,6 +99,7 @@ export class InventoryUI {
   private hudWeaponName: Phaser.GameObjects.Text;
 
   private equipmentSystem: EquipmentSystem | null = null;
+  private proficiencySystem: ProficiencySystem | null = null;
 
   constructor(
     private scene: Phaser.Scene,
@@ -82,8 +109,10 @@ export class InventoryUI {
     private charStats: CharacterStats,
     private getNearTable: (() => boolean) | null = null,
     equipmentSystem: EquipmentSystem | null = null,
+    proficiencySystem: ProficiencySystem | null = null,
   ) {
     this.equipmentSystem = equipmentSystem;
+    this.proficiencySystem = proficiencySystem;
     const W = scene.scale.width;
     const H = scene.scale.height;
 
@@ -199,6 +228,7 @@ export class InventoryUI {
       const isFood      = key && FOOD_ITEM_IDS.has(key);
       const isArmor     = key && ARMOR_ITEM_IDS.has(key);
       const isShield    = key && SHIELD_ITEM_IDS.has(key);
+      const isRecipeItem = key && RECIPE_ITEM_IDS.has(key);
 
       slot.style.cssText = `
         width:56px; height:56px; background:${isEquipped ? '#2a4020' : '#1a2030'};
@@ -235,12 +265,18 @@ export class InventoryUI {
             tooltip.textContent = isEquipped ? '클릭: 장착 해제' : '클릭: 장착';
           } else if (isArmor || isShield) {
             tooltip.textContent = '우클릭: 장착';
+          } else if (isRecipeItem) {
+            const def = RECIPE_ITEMS[key];
+            const alreadyKnown = this.proficiencySystem?.isUnlockedByResearch(def.unlocksId);
+            tooltip.textContent = alreadyKnown ? '이미 학습한 레시피' : `클릭: [${def.label}] 학습`;
           } else if (isFood) {
             const restore = FOOD_RESTORE[key];
             if (restore) {
               const nearTable = this.getNearTable?.() ?? false;
               const bonus = nearTable ? ` → ${Math.ceil(restore * 1.3)} (식탁+30%)` : '';
-              tooltip.textContent = `클릭: 먹기 (+${restore} 포만감${bonus})`;
+              const healHp = FOOD_HEAL_HP[key] ?? 0;
+              const hpStr = healHp > 0 ? ` / HP+${healHp}` : '';
+              tooltip.textContent = `클릭: 먹기 (+${restore} 포만감${bonus}${hpStr})`;
             } else {
               tooltip.textContent = '먹을 수 없습니다';
             }
@@ -255,6 +291,8 @@ export class InventoryUI {
             this.handleWeaponClick(key);
           } else if (isFood) {
             this.handleFoodClick(key, tooltip);
+          } else if (isRecipeItem) {
+            this.handleRecipeItemClick(key, tooltip);
           }
         });
 
@@ -278,6 +316,48 @@ export class InventoryUI {
     } else {
       this.equipWeapon(weapId);
     }
+  }
+
+  private handleRecipeItemClick(itemKey: string, tooltip: HTMLDivElement): void {
+    const def = RECIPE_ITEMS[itemKey];
+    if (!def) return;
+
+    if (this.proficiencySystem?.isUnlockedByResearch(def.unlocksId)) {
+      tooltip.textContent = '이미 알고 있는 레시피입니다';
+      return;
+    }
+
+    const confirmed = window.confirm(`[${def.label}]을(를) 학습하시겠습니까?`);
+    if (!confirmed) return;
+
+    if (def.requiredProficiency && this.proficiencySystem) {
+      const currentLevel = this.proficiencySystem.getLevel(def.requiredProficiency.type);
+      if (currentLevel < def.requiredProficiency.level) {
+        const typeName = PROF_NAMES[def.requiredProficiency.type];
+        window.alert(`${typeName} 숙련도 Lv.${def.requiredProficiency.level} 이상이 필요합니다 (현재 Lv.${currentLevel})`);
+        return;
+      }
+    }
+
+    this.proficiencySystem?.unlockByItem(def.unlocksId);
+    tooltip.textContent = '';
+    this.showNotice(`✅ [${def.label}]을(를) 습득했습니다!`);
+  }
+
+  private showNotice(msg: string): void {
+    const existing = document.getElementById('recipe-learn-notice');
+    existing?.remove();
+    const notice = document.createElement('div');
+    notice.id = 'recipe-learn-notice';
+    notice.style.cssText = `
+      position:fixed; bottom:120px; left:50%; transform:translateX(-50%);
+      color:#ffd700; font:12px monospace; background:rgba(0,0,0,0.7);
+      padding:5px 12px; border-radius:4px; z-index:500; pointer-events:none; opacity:1;
+      transition: opacity 1.5s ease;
+    `;
+    notice.textContent = msg;
+    document.body.appendChild(notice);
+    setTimeout(() => { notice.style.opacity = '0'; setTimeout(() => notice.remove(), 1500); }, 500);
   }
 
   private handleEquipmentRightClick(
@@ -308,6 +388,11 @@ export class InventoryUI {
 
     this.inventory.remove(itemKey, 1);
     this.survival.eat(restore);
+
+    const healHp = FOOD_HEAL_HP[itemKey] ?? 0;
+    if (healHp > 0) {
+      this.survival.hp = Math.min(this.survival.maxHp, this.survival.hp + healHp);
+    }
 
     if (nearTable) this.showTableBonusPopup();
 
@@ -359,11 +444,19 @@ export class InventoryUI {
       item_sword_stone:     '⚔',
       item_fishing_rod:     '🎣',
       item_torch:           '🔥',
-      item_armor_hide:      '🦺',
-      item_armor_wood:      '🪵',
-      item_armor_stone:     '🧱',
-      item_shield_wood:     '🛡',
-      item_shield_stone:    '🛡',
+      item_armor_hide:           '🦺',
+      item_armor_wood:           '🪵',
+      item_armor_stone:          '🧱',
+      item_armor_iron:           '⚙',
+      item_shield_wood:          '🛡',
+      item_shield_stone:         '🛡',
+      item_sword_iron:           '⚔',
+      item_fish_stew:            '🍲',
+      item_meat_stew:            '🍲',
+      item_recipe_fish_stew:     '📜',
+      item_recipe_meat_stew:     '📜',
+      item_blueprint_iron_sword: '📋',
+      item_blueprint_armor:      '📋',
     };
     return map[key] ?? '📦';
   }

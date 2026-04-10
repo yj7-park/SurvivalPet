@@ -81,6 +81,11 @@ export class ProficiencySystem {
     this.unlockedByResearch.add(researchId);
   }
 
+  /** 레시피/도면 아이템을 통한 해금 (연구 해금과 동일한 Set에 저장) */
+  unlockByItem(unlocksId: string): void {
+    this.unlockedByResearch.add(unlocksId);
+  }
+
   isUnlockedByResearch(id: string): boolean {
     return this.unlockedByResearch.has(id);
   }

@@ -41,6 +41,15 @@ export const WEAPONS: WeaponConfig[] = [
     ],
     craftTimeSec: 8, requiredCraftLevel: 5,
   },
+  {
+    id: 'sword_iron', name: '철제 칼', type: 'melee',
+    baseDamage: 18, baseCooldownSec: 1.0, rangeTiles: 1.5,
+    recipe: [
+      { itemId: 'item_processed_stone', amount: 8 },
+      { itemId: 'item_wood', amount: 3 },
+    ],
+    craftTimeSec: 30, requiredCraftLevel: 6,
+  },
 ];
 
 export function calcDamage(weapon: WeaponConfig | null, STR: number): number {

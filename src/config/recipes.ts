@@ -14,6 +14,24 @@ export interface Recipe {
 // ── 요리 레시피 (cookTime 기준)
 export const COOKING_RECIPES: Recipe[] = [
   {
+    id: 'cook_fish_stew',
+    label: '🍲 생선 스튜',
+    category: 'cooking',
+    inputs: [{ itemId: 'item_fish', amount: 2 }],
+    output: { itemId: 'item_fish_stew', amount: 1 },
+    timeMultiplier: 2,
+    unlock: { proficiencyLevel: 4, researchId: 'recipe_fish_stew' },
+  },
+  {
+    id: 'cook_meat_stew',
+    label: '🍲 고기 스튜',
+    category: 'cooking',
+    inputs: [{ itemId: 'item_raw_meat', amount: 2 }],
+    output: { itemId: 'item_meat_stew', amount: 1 },
+    timeMultiplier: 2,
+    unlock: { proficiencyLevel: 4, researchId: 'recipe_meat_stew' },
+  },
+  {
     id: 'cook_fish_1',
     label: '🐟 생선 굽기',
     category: 'cooking',
@@ -79,6 +97,31 @@ export const CRAFTING_RECIPES: Recipe[] = [
     output: { itemId: 'item_processed_stone', amount: 5 },
     timeMultiplier: 1,
     unlock: { proficiencyLevel: 4 },
+  },
+  // ── 도면 해금 제작물
+  {
+    id: 'craft_sword_iron',
+    label: '⚔ 철제 칼',
+    category: 'armor',
+    inputs: [
+      { itemId: 'item_processed_stone', amount: 8 },
+      { itemId: 'item_wood', amount: 3 },
+    ],
+    output: { itemId: 'item_sword_iron', amount: 1 },
+    timeMultiplier: 5,
+    unlock: { proficiencyLevel: 6, researchId: 'blueprint_iron_sword' },
+  },
+  {
+    id: 'craft_armor_iron',
+    label: '🛡 철제 갑옷',
+    category: 'armor',
+    inputs: [
+      { itemId: 'item_processed_stone', amount: 10 },
+      { itemId: 'item_hide', amount: 3 },
+    ],
+    output: { itemId: 'item_armor_iron', amount: 1 },
+    timeMultiplier: 6.67,
+    unlock: { proficiencyLevel: 7, researchId: 'blueprint_armor' },
   },
   // ── 방어구
   {

@@ -767,6 +767,69 @@ function drawArrow(): HTMLCanvasElement {
   return c;
 }
 
+// ── Recipe / Blueprint item sprites ──────────────────────────────────────────
+
+function drawRecipeScroll(color: string): HTMLCanvasElement {
+  const c = makeCanvas(); const ctx = c.getContext('2d')!;
+  ctx.clearRect(0, 0, 32, 32);
+
+  // Scroll body
+  ctx.fillStyle = '#f0e0a0';
+  ctx.fillRect(8, 6, 16, 20);
+
+  // Rolled ends
+  ctx.fillStyle = '#d0b870';
+  ctx.fillRect(8, 4, 16, 4);
+  ctx.fillRect(8, 24, 16, 4);
+  ctx.fillStyle = '#b89040';
+  ctx.fillRect(8, 4, 16, 2);
+  ctx.fillRect(8, 26, 16, 2);
+
+  // Text lines (simulated)
+  ctx.fillStyle = color;
+  ctx.fillRect(11, 11, 10, 1.5);
+  ctx.fillRect(11, 14, 8, 1.5);
+  ctx.fillRect(11, 17, 10, 1.5);
+  ctx.fillRect(11, 20, 6, 1.5);
+
+  return c;
+}
+
+function drawBlueprint(): HTMLCanvasElement {
+  const c = makeCanvas(); const ctx = c.getContext('2d')!;
+  ctx.clearRect(0, 0, 32, 32);
+
+  // Blueprint background
+  ctx.fillStyle = '#1a3a6a';
+  ctx.fillRect(6, 5, 20, 22);
+  ctx.fillStyle = '#2a5aaa';
+  ctx.fillRect(7, 6, 18, 20);
+
+  // Grid lines
+  ctx.strokeStyle = '#4a8aee';
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.moveTo(11 + i * 4, 8); ctx.lineTo(11 + i * 4, 24);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(8, 12 + i * 4); ctx.lineTo(24, 12 + i * 4);
+    ctx.stroke();
+  }
+
+  // Blueprint drawing (sword shape)
+  ctx.strokeStyle = '#aaddff';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(12, 22); ctx.lineTo(20, 10);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(11, 19); ctx.lineTo(15, 19);
+  ctx.stroke();
+
+  return c;
+}
+
 // ── Armor & Shield sprites ───────────────────────────────────────────────────
 
 function drawArmor(mat: 'hide' | 'wood' | 'stone'): HTMLCanvasElement {
@@ -1065,6 +1128,18 @@ export function registerTextures(scene: Phaser.Scene): void {
   scene.textures.addCanvas('item_armor_hide',    drawArmor('hide'));
   scene.textures.addCanvas('item_armor_wood',    drawArmor('wood'));
   scene.textures.addCanvas('item_armor_stone',   drawArmor('stone'));
+  scene.textures.addCanvas('item_armor_iron',    drawArmor('stone')); // reuse stone sprite, tinted iron color
   scene.textures.addCanvas('item_shield_wood',   drawShieldItem('wood'));
   scene.textures.addCanvas('item_shield_stone',  drawShieldItem('stone'));
+  scene.textures.addCanvas('item_sword_iron',    drawSword('stone')); // reuse stone sword, differentiated by name
+
+  // Recipe & blueprint items
+  scene.textures.addCanvas('item_recipe_fish_stew',     drawRecipeScroll('#2299cc'));
+  scene.textures.addCanvas('item_recipe_meat_stew',     drawRecipeScroll('#cc6622'));
+  scene.textures.addCanvas('item_blueprint_iron_sword', drawBlueprint());
+  scene.textures.addCanvas('item_blueprint_armor',      drawBlueprint());
+
+  // Stew food items
+  scene.textures.addCanvas('item_fish_stew',  drawCookedFish());
+  scene.textures.addCanvas('item_meat_stew',  drawCookedMeat());
 }

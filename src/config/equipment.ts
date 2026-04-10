@@ -12,9 +12,10 @@ export interface ShieldDef {
 }
 
 export const ARMOR_DEFS: Record<string, ArmorDef> = {
-  item_armor_hide:  { itemId: 'item_armor_hide',  label: '가죽 갑옷', defense: 3 },
-  item_armor_wood:  { itemId: 'item_armor_wood',  label: '목재 갑옷', defense: 5 },
-  item_armor_stone: { itemId: 'item_armor_stone', label: '석재 갑옷', defense: 9 },
+  item_armor_hide:  { itemId: 'item_armor_hide',  label: '가죽 갑옷',  defense: 3  },
+  item_armor_wood:  { itemId: 'item_armor_wood',  label: '목재 갑옷',  defense: 5  },
+  item_armor_stone: { itemId: 'item_armor_stone', label: '석재 갑옷',  defense: 9  },
+  item_armor_iron:  { itemId: 'item_armor_iron',  label: '철제 갑옷',  defense: 14 },
 };
 
 export const SHIELD_DEFS: Record<string, ShieldDef> = {

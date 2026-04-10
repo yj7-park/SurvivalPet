@@ -25,6 +25,7 @@ import { COOKING_RECIPES, CRAFTING_RECIPES, Recipe } from '../config/recipes';
 import { ProficiencySystem, ProficiencyType, PROF_NAMES } from '../systems/ProficiencySystem';
 import { ResearchSystem, RESEARCH_DEFS } from '../systems/ResearchSystem';
 import { EquipmentSystem } from '../systems/EquipmentSystem';
+import { DropSystem } from '../systems/DropSystem';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -81,6 +82,7 @@ export class GameScene extends Phaser.Scene {
   proficiency!: ProficiencySystem;
   research!: ResearchSystem;
   equipmentSystem!: EquipmentSystem;
+  private dropSystem!: DropSystem;
   private workbenchPos: { wx: number; wy: number } | null = null;
 
   // 요리 진행 상태
@@ -101,6 +103,7 @@ export class GameScene extends Phaser.Scene {
   // Click-to-move target
   private moveTarget: { worldX: number; worldY: number } | null = null;
   private moveTargetCommand: Command | null = null;
+  private pendingGroundPickup: string | null = null; // ground item id to pick up on arrival
 
   // Tree regeneration
   private clearedTrees: { tx: number; ty: number }[] = [];
@@ -198,6 +201,12 @@ export class GameScene extends Phaser.Scene {
     this.equipmentSystem = new EquipmentSystem();
     this.combat.setEquipmentSystem(this.equipmentSystem, this.proficiency);
 
+    this.dropSystem = new DropSystem(this);
+    this.combat.setOnAnimalKillCallback((x, y, animalType) => {
+      const seed = `${this.seed}_drop_${x}_${y}_${Date.now()}`;
+      this.dropSystem.spawnDrops(animalType, x, y, seed);
+    });
+
     // 전투 종료 시 큐 진행
     this.combat.setCombatEndCallback(() => {
       this.commandQueue.completeCommand();
@@ -293,6 +302,25 @@ export class GameScene extends Phaser.Scene {
       if (!isShiftHeld) {
         this.commandQueue.clearAll();
         this.combat.unlock();
+      }
+
+      // Check for ground item click — pick up or walk to
+      const groundItem = this.dropSystem.getItemAtClick(wx, wy);
+      if (groundItem) {
+        const dist = Math.hypot(this.player.sprite.x - groundItem.x, this.player.sprite.y - groundItem.y);
+        if (dist <= 48) {
+          const result = this.dropSystem.pickup(groundItem.id, this.inventory, this.player.sprite.x, this.player.sprite.y);
+          if (result.ok) {
+            this.showNotificationPopup(`+${result.item.amount} ${result.item.itemId.replace('item_', '')}`, '#aaffaa');
+          } else if (result.reason === 'inventory_full') {
+            this.showNotificationPopup('인벤토리가 가득 찼습니다', '#ff8888');
+          }
+        } else {
+          // Walk toward item and pick up on arrival
+          this.moveTarget = { worldX: groundItem.x, worldY: groundItem.y };
+          this.pendingGroundPickup = groundItem.id;
+        }
+        return;
       }
 
       // Check for animal click — lock on via CombatSystem
@@ -455,6 +483,7 @@ export class GameScene extends Phaser.Scene {
     this.survival.update(delta);
     this.weather.update(delta);
     this.invasion.update(delta);
+    this.dropSystem.update(delta, this.player.sprite.x, this.player.sprite.y, this.inventory);
     this.shelfUI.updatePlayerPosition(this.player.sprite.x, this.player.sprite.y);
     this.buildSystem.update(delta, this.survival, this.player.sprite.x, this.player.sprite.y);
 
@@ -517,6 +546,7 @@ export class GameScene extends Phaser.Scene {
       this.buildSystem.pauseBuild(); // 진행 상태 저장 (취소 X)
       this.moveTarget = null;
       this.moveTargetCommand = null;
+      this.pendingGroundPickup = null;
     }
 
     // ── 자동이동: 클릭 이동 ──────────────────────────────────
@@ -531,6 +561,15 @@ export class GameScene extends Phaser.Scene {
         if (this.moveTargetCommand) {
           this.commandQueue.completeCommand();
           this.processNextQueueCommand();
+        }
+        if (this.pendingGroundPickup) {
+          const result = this.dropSystem.pickup(this.pendingGroundPickup, this.inventory, this.player.sprite.x, this.player.sprite.y);
+          if (result.ok) {
+            this.showNotificationPopup(`+${result.item.amount} ${result.item.itemId.replace('item_', '')}`, '#aaffaa');
+          } else if (result.reason === 'inventory_full') {
+            this.showNotificationPopup('인벤토리가 가득 찼습니다', '#ff8888');
+          }
+          this.pendingGroundPickup = null;
         }
         this.moveTarget = null;
         this.moveTargetCommand = null;
@@ -1184,6 +1223,10 @@ export class GameScene extends Phaser.Scene {
           container.appendChild(this.makeLockedRow(recipe.label, `제작 숙련도 Lv.${recipe.unlock.proficiencyLevel} 필요`));
           continue;
         }
+        if (recipe.unlock.researchId && !this.proficiency.isUnlockedByResearch(recipe.unlock.researchId)) {
+          container.appendChild(this.makeLockedRow(recipe.label, '도면 아이템으로 해금 필요'));
+          continue;
+        }
         const canCraft = recipe.inputs.every(i => this.inventory.has(i.itemId, i.amount));
         const ms = this.charStats.craftTime * recipe.timeMultiplier * profMult;
         const row = this.makeWorkbenchRow(
@@ -1457,6 +1500,11 @@ export class GameScene extends Phaser.Scene {
       // 숙련도 잠금 체크
       if (cookLvl2 < recipe.unlock.proficiencyLevel) {
         container.appendChild(this.makeLockedRow(recipe.label, `요리 숙련도 Lv.${recipe.unlock.proficiencyLevel} 필요`));
+        continue;
+      }
+      // 레시피 아이템 해금 체크 (researchId가 있으면 반드시 해금되어야 함)
+      if (recipe.unlock.researchId && !this.proficiency.isUnlockedByResearch(recipe.unlock.researchId)) {
+        container.appendChild(this.makeLockedRow(recipe.label, '레시피 아이템으로 해금 필요'));
         continue;
       }
       const canCook = recipe.inputs.every(i => this.inventory.has(i.itemId, i.amount));

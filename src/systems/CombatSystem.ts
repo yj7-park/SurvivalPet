@@ -23,6 +23,7 @@ export class CombatSystem {
   private hitFlashCallback: (() => void) | null = null;
   private combatEndCallback: (() => void) | null = null;
   private onKillCallback: (() => void) | null = null;
+  private onAnimalKillCallback: ((x: number, y: number, type: string) => void) | null = null;
   private effects: EffectSystem | null = null;
   private equipmentSystem: EquipmentSystem | null = null;
   private proficiency: ProficiencySystem | null = null;
@@ -77,6 +78,9 @@ export class CombatSystem {
   setHitFlashCallback(cb: () => void): void { this.hitFlashCallback = cb; }
   setCombatEndCallback(cb: () => void): void { this.combatEndCallback = cb; }
   setOnKillCallback(cb: () => void): void { this.onKillCallback = cb; }
+  setOnAnimalKillCallback(cb: (x: number, y: number, type: string) => void): void {
+    this.onAnimalKillCallback = cb;
+  }
   setEffectSystem(effects: EffectSystem): void { this.effects = effects; }
   setEquipmentSystem(equip: EquipmentSystem, prof: ProficiencySystem): void {
     this.equipmentSystem = equip;
@@ -152,10 +156,17 @@ export class CombatSystem {
 
   private applyMeleeDamage(target: Animal): void {
     const dmg = calcDamage(this.equippedWeapon, this.stats.str);
+    const tx = target.x, ty = target.y;
+    const animalType = target.config.type as string;
     const drops = this.animalMgr.attackAnimal(target, dmg, this.player.sprite.x, this.player.sprite.y, this.rng);
     drops.forEach(d => this.inventory.add(d.itemKey, d.count));
-    this.spawnFloatText(target.x, target.y - 20, `-${dmg}`, '#ff6666');
-    if (target.isDead) { this.survival.addAction(10); this.onKillCallback?.(); this.unlock(); }
+    this.spawnFloatText(tx, ty - 20, `-${dmg}`, '#ff6666');
+    if (target.isDead) {
+      this.survival.addAction(10);
+      this.onKillCallback?.();
+      this.onAnimalKillCallback?.(tx, ty, animalType);
+      this.unlock();
+    }
   }
 
   private spawnArrow(target: Animal): void {
@@ -200,6 +211,7 @@ export class CombatSystem {
           if (target.isDead) {
             this.survival.addAction(10);
             this.onKillCallback?.();
+            this.onAnimalKillCallback?.(target.x, target.y, target.config.type as string);
             if (this.lockedTarget === target) this.unlock();
           }
           arrowRect.destroy();
