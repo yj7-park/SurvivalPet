@@ -55,7 +55,7 @@ export class Player {
       || this.wasd.up.isDown || this.wasd.down.isDown;
   }
 
-  update(delta: number, isIncapacitated: boolean, externalSpeedMult = 1.0) {
+  update(delta: number, isIncapacitated: boolean, externalSpeedMult = 1.0, touchVelocity?: { x: number; y: number }) {
     if (isIncapacitated) return;
 
     const dt = delta / 1000;
@@ -70,6 +70,12 @@ export class Player {
     if (right.isDown || this.wasd.right.isDown) vx += speed;
     if (up.isDown    || this.wasd.up.isDown)    vy -= speed;
     if (down.isDown  || this.wasd.down.isDown)  vy += speed;
+
+    // Touch joystick input
+    if (touchVelocity && (touchVelocity.x !== 0 || touchVelocity.y !== 0)) {
+      vx += touchVelocity.x * speed;
+      vy += touchVelocity.y * speed;
+    }
 
     if (vx !== 0 && vy !== 0) { vx *= 0.7071; vy *= 0.7071; }
 

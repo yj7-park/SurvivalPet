@@ -56,6 +56,7 @@ import { CampfireSystem } from '../systems/CampfireSystem';
 import { CampfirePanel } from '../ui/CampfirePanel';
 import { NotifySystem } from '../systems/NotifySystem';
 import { LogPanel } from '../ui/LogPanel';
+import { TouchInputSystem, isTouchDevice } from '../systems/TouchInputSystem';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -228,6 +229,9 @@ export class GameScene extends Phaser.Scene {
   private notifySystem!: NotifySystem;
   private logPanel!: LogPanel;
 
+  // 터치 입력 시스템
+  private touchInput!: TouchInputSystem;
+
   // 날씨 효과
   private lastSeasonForWeather = '';
   private winterHintShown = false;
@@ -331,6 +335,23 @@ export class GameScene extends Phaser.Scene {
       return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
     });
     this.logPanel = new LogPanel();
+
+    // 터치 입력 시스템 초기화
+    this.touchInput = new TouchInputSystem();
+    if (isTouchDevice) {
+      this.touchInput.enable();
+      this.touchInput.setOnZoom((delta) => {
+        const cam = this.cameras.main;
+        cam.setZoom(Phaser.Math.Clamp(cam.zoom + delta, 0.5, 2.0));
+      });
+      this.touchInput.setOnActionPress((key) => {
+        if (key === 'interact') this.input.keyboard?.emit('keydown-SPACE');
+        if (key === 'inventory') this.input.keyboard?.emit('keydown-I');
+        if (key === 'equipment') this.input.keyboard?.emit('keydown-E');
+        if (key === 'build') this.toggleBuildPanel();
+        if (key === 'help') this.cheatsheetPanel.toggle();
+      });
+    }
 
     // 모닥불 시스템 초기화
     this.campfireSystem = new CampfireSystem(this);
@@ -1443,7 +1464,8 @@ export class GameScene extends Phaser.Scene {
       || this.chatSystem.isInputActive();
 
     const weatherSpeedMult = this.weather.effectSystem.getMultipliers(this.playerIsIndoor).moveSpeed;
-    this.player.update(delta, suppressKeys, this.survival.fatigueSpeedMult * this.survival.hungerSpeedMult * weatherSpeedMult);
+    const touchVec = this.touchInput?.getMovementVector();
+    this.player.update(delta, suppressKeys, this.survival.fatigueSpeedMult * this.survival.hungerSpeedMult * weatherSpeedMult, touchVec);
     this.interaction.update(delta);
 
     // ── 실내/실외 상태 갱신 (타일 변화 시에만) ───────────────
@@ -1707,6 +1729,7 @@ export class GameScene extends Phaser.Scene {
     this.campfireSystem?.destroy();
     this.logPanel?.close();
     this.notifySystem?.destroy();
+    this.touchInput?.disable();
   }
 
   // ── Map ──────────────────────────────────────────────────

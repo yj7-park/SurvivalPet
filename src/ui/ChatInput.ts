@@ -57,14 +57,24 @@ export class ChatInput {
     this.container.style.display = 'flex';
     this.input.value = '';
     // Small delay to avoid the Enter key that opened it being captured
-    setTimeout(() => this.input.focus(), 50);
+    setTimeout(() => {
+      this.input.focus();
+      // Soft keyboard avoidance on mobile
+      window.scrollTo(0, 0);
+      if (window.visualViewport) {
+        const vvh = window.visualViewport.height;
+        document.body.style.height = `${vvh}px`;
+      }
+    }, 50);
   }
 
   close(): void {
     this.container.style.display = 'none';
     this.input.blur();
+    document.body.style.height = '';
     this.onCloseCb?.();
   }
+
 
   isOpen(): boolean { return this.container.style.display !== 'none'; }
 
