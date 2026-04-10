@@ -204,6 +204,17 @@ export class UIScene extends Phaser.Scene {
     });
     // Tool/seed use callback → delegate to GameScene
     this.inventoryUI.setOnToolUse((itemId) => (gs as unknown as { handleToolUse: (id: string) => void }).handleToolUse?.(itemId));
+    // Equip visual effect
+    this.inventoryUI.setOnEquip(() => {
+      const fullGs = this.scene.get('GameScene') as unknown as {
+        player: { sprite: Phaser.GameObjects.Sprite };
+      };
+      if (fullGs.player?.sprite) {
+        import('../systems/EquipEffect').then(({ onItemEquipped }) => {
+          onItemEquipped(this, fullGs.player.sprite as Phaser.GameObjects.Sprite);
+        });
+      }
+    });
 
     // V키: 인벤토리 토글
     this.input.keyboard!.on('keydown-V', () => this.inventoryUI.toggle());

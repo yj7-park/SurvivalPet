@@ -134,11 +134,13 @@ export class InventoryUI {
   private onEatCallback?: () => void;
   private onEatFeedbackCb?: (hungerRecovered: number, hpChanged: number, poisoned: boolean) => void;
   private onToolUseCb?: (itemId: string) => void;
+  private onEquipCallback?: () => void;
 
   setOnOpen(cb: () => void): void { this.onOpenCallback = cb; }
   setOnEat(cb: () => void): void { this.onEatCallback = cb; }
   setOnEatFeedback(cb: (hungerRecovered: number, hpChanged: number, poisoned: boolean) => void): void { this.onEatFeedbackCb = cb; }
   setOnToolUse(cb: (itemId: string) => void): void { this.onToolUseCb = cb; }
+  setOnEquip(cb: () => void): void { this.onEquipCallback = cb; }
 
   constructor(
     private scene: Phaser.Scene,
@@ -208,6 +210,7 @@ export class InventoryUI {
     }
     this.updateWeaponHUD();
     if (this.panel) this.refreshPanel();
+    if (id) this.onEquipCallback?.();
   }
 
   destroy(): void {
