@@ -30,20 +30,34 @@ export class TreeRenderer {
   addTree(tx: number, ty: number, season: Season): void {
     const key = `${tx},${ty}`;
     const frame = TREE_SEASON_FRAME[season] ?? 0;
+    // origin (0.5, 1.0) places pivot at trunk-base for natural sway rotation
     const sprite = this.scene.add.sprite(
-      tx * TILE,
-      ty * TILE - TREE_OVERHANG,
+      tx * TILE + TILE / 2,
+      (ty + 1) * TILE,
       'obj_tree_seasons',
       frame,
     )
-      .setOrigin(0, 0)
+      .setOrigin(0.5, 1.0)
       .setDepth((ty + 1) * TILE);
+    // Gentle wind-sway tween with per-tree phase variation
+    const swayDuration = 2200 + ((tx * 137 + ty * 97) % 800);
+    const swayDelay = (tx * 43 + ty * 71) % 1500;
+    this.scene.tweens.add({
+      targets: sprite,
+      angle: 1.5,
+      duration: swayDuration,
+      delay: swayDelay,
+      ease: 'Sine.easeInOut',
+      yoyo: true,
+      repeat: -1,
+    });
     this.sprites.set(key, sprite);
   }
 
   removeTree(tx: number, ty: number): void {
     const key = `${tx},${ty}`;
-    this.sprites.get(key)?.destroy();
+    const s = this.sprites.get(key);
+    if (s) { this.scene.tweens.killTweensOf(s); s.destroy(); }
     this.sprites.delete(key);
   }
 
@@ -58,6 +72,8 @@ export class TreeRenderer {
     if (!sprite) return;
 
     this.sprites.delete(key);
+    // Stop sway tween so fall animation has clean control over angle
+    this.scene.tweens.killTweensOf(sprite);
 
     const treeWx = tx * TILE + TILE / 2;
     const fallDir = playerX < treeWx ? 'right' : 'left';
@@ -117,11 +133,14 @@ export class TreeRenderer {
   startRegrowAnimation(tx: number, ty: number, season: Season): void {
     const key = `${tx},${ty}`;
     // Create seedling first, then grow into tree
-    const wx = tx * TILE;
-    const wy = ty * TILE - TREE_OVERHANG;
     const frame = TREE_SEASON_FRAME[season] ?? 0;
-    const sprite = this.scene.add.sprite(wx, wy, 'obj_tree_seasons', frame)
-      .setOrigin(0, 0)
+    const sprite = this.scene.add.sprite(
+      tx * TILE + TILE / 2,
+      (ty + 1) * TILE,
+      'obj_tree_seasons',
+      frame,
+    )
+      .setOrigin(0.5, 1.0)
       .setDepth((ty + 1) * TILE)
       .setScale(0.1)
       .setAlpha(0.4);
@@ -134,6 +153,7 @@ export class TreeRenderer {
       { scale: 1.0, alpha: 1.0, duration: 2000 },
     ];
     let delay = 0;
+    const totalGrowDuration = stages.reduce((sum, s) => sum + s.duration, 0);
     stages.forEach(stage => {
       this.scene.tweens.add({
         targets: sprite,
@@ -145,6 +165,18 @@ export class TreeRenderer {
         ease: 'Quad.easeOut',
       });
       delay += stage.duration;
+    });
+    // Start sway after growth completes
+    const swayDuration = 2200 + ((tx * 137 + ty * 97) % 800);
+    const swayDelay2 = (tx * 43 + ty * 71) % 1500;
+    this.scene.tweens.add({
+      targets: sprite,
+      angle: 1.5,
+      duration: swayDuration,
+      delay: totalGrowDuration + swayDelay2,
+      ease: 'Sine.easeInOut',
+      yoyo: true,
+      repeat: -1,
     });
   }
 
