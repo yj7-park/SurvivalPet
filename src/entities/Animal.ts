@@ -6,7 +6,7 @@ const ANIMAL_HITBOX = 8;  // 충돌 박스 반절 (픽셀)
 const MAP_TILES = 100;
 
 type AnimalState = 'IDLE' | 'WANDER' | 'FLEE' | 'AGGRESSIVE';
-export type AnimalType = 'deer' | 'tiger';
+export type AnimalType = 'deer' | 'wolf' | 'tiger';
 
 export interface AnimalDrop {
   itemKey: string;
@@ -39,10 +39,21 @@ export const DEER_CONFIG: AnimalConfig = {
   ],
 };
 
+export const WOLF_CONFIG: AnimalConfig = {
+  type: 'wolf', maxHp: 40,
+  wanderSpeed: 70, actionSpeed: 100,
+  attackDamage: 8, attackCooldownMs: 1500, attackRangePx: 1.25 * TILE_SIZE,
+  homeRadiusTiles: 10, giveUpTiles: 20,
+  drops: [
+    { itemKey: 'item_raw_meat', minCount: 1, maxCount: 3, chance: 1.0 },
+    { itemKey: 'item_hide',     minCount: 1, maxCount: 1, chance: 0.5 },
+  ],
+};
+
 export const TIGER_CONFIG: AnimalConfig = {
-  type: 'tiger', maxHp: 120,
-  wanderSpeed: 70, actionSpeed: 150,
-  attackDamage: 15, attackCooldownMs: 1500, attackRangePx: 1.5 * TILE_SIZE,
+  type: 'tiger', maxHp: 80,
+  wanderSpeed: 70, actionSpeed: 130,
+  attackDamage: 15, attackCooldownMs: 1200, attackRangePx: 1.5 * TILE_SIZE,
   homeRadiusTiles: 8, giveUpTiles: 15,
   drops: [
     { itemKey: 'item_raw_meat',    minCount: 3, maxCount: 5, chance: 1.0 },

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { Animal, AnimalType, DEER_CONFIG, TIGER_CONFIG } from '../entities/Animal';
+import { Animal, AnimalType, DEER_CONFIG, WOLF_CONFIG, TIGER_CONFIG } from '../entities/Animal';
 import { TileType, TILE_SIZE } from '../world/MapGenerator';
 import { SeededRandom } from '../utils/seedRandom';
 import { Inventory } from './Inventory';
@@ -30,7 +30,8 @@ export class AnimalManager {
 
     const spawnList: { type: AnimalType; count: number }[] = [
       { type: 'deer',  count: rng.int(3, 6) },
-      { type: 'tiger', count: rng.int(1, 2) },
+      { type: 'wolf',  count: rng.int(1, 3) },
+      { type: 'tiger', count: rng.int(0, 1) },
     ];
 
     for (const { type, count } of spawnList) {
@@ -42,7 +43,7 @@ export class AnimalManager {
         const [tx, ty] = dirtTiles[Math.floor(rng.next() * dirtTiles.length)];
         const wx = tx * TILE_SIZE + TILE_SIZE / 2;
         const wy = ty * TILE_SIZE + TILE_SIZE / 2;
-        const config = type === 'deer' ? DEER_CONFIG : TIGER_CONFIG;
+        const config = type === 'deer' ? DEER_CONFIG : type === 'wolf' ? WOLF_CONFIG : TIGER_CONFIG;
         const animalRng = new SeededRandom(`${seed}_animal_${id}`);
         const animal = new Animal(scene, wx, wy, config, id, animalRng);
         animal.setTiles(tiles);

@@ -1101,6 +1101,63 @@ function drawTiger(state: 'idle' | 'walk' | 'attack'): HTMLCanvasElement {
   return c;
 }
 
+function drawWolf(state: 'idle' | 'walk' | 'attack'): HTMLCanvasElement {
+  const c = makeCanvas(); const ctx = c.getContext('2d')!;
+  ctx.clearRect(0, 0, 32, 32);
+
+  ctx.fillStyle = 'rgba(0,0,0,0.15)';
+  ctx.beginPath(); ctx.ellipse(16, 30, 8, 2, 0, 0, Math.PI * 2); ctx.fill();
+
+  const legOff = state === 'walk' ? 2 : 0;
+  const atkLean = state === 'attack' ? -2 : 0;
+
+  // Legs
+  ctx.fillStyle = '#4a4a5a';
+  ctx.fillRect(9,  22, 3, 7 + legOff);
+  ctx.fillRect(14, 22, 3, 7 - legOff);
+  ctx.fillRect(18, 22, 3, 7 + legOff);
+  ctx.fillRect(23, 22, 3, 7 - legOff);
+
+  // Body
+  ctx.fillStyle = '#6a6a7a';
+  ctx.beginPath(); ctx.ellipse(17 + atkLean, 19, 10, 7, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#9090a0';
+  ctx.beginPath(); ctx.ellipse(17 + atkLean, 21, 6, 4, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Neck
+  ctx.fillStyle = '#6a6a7a';
+  ctx.fillRect(6 + atkLean, 12, 6, 9);
+
+  // Head
+  ctx.fillStyle = '#6a6a7a';
+  ctx.beginPath(); ctx.ellipse(5 + atkLean, 9, 7, 5.5, -0.15, 0, Math.PI * 2); ctx.fill();
+
+  // Snout
+  ctx.fillStyle = '#4a4a5a';
+  ctx.beginPath(); ctx.ellipse(0 + atkLean, 10, 3, 2, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(-1 + atkLean, 9, 1, 0, Math.PI * 2); ctx.fill();
+
+  // Eyes
+  ctx.fillStyle = state === 'attack' ? '#ff6600' : '#ffdd44';
+  ctx.beginPath(); ctx.arc(4 + atkLean, 7, 1.5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(4 + atkLean, 7, 0.8, 0, Math.PI * 2); ctx.fill();
+
+  // Ears
+  ctx.fillStyle = '#4a4a5a';
+  ctx.beginPath(); ctx.moveTo(3 + atkLean, 4); ctx.lineTo(0 + atkLean, 0); ctx.lineTo(6 + atkLean, 3); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(8 + atkLean, 4); ctx.lineTo(8 + atkLean, 0); ctx.lineTo(11 + atkLean, 3); ctx.closePath(); ctx.fill();
+
+  // Tail
+  ctx.strokeStyle = '#6a6a7a'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(27, 20); ctx.quadraticCurveTo(31, 16, 29, 12); ctx.stroke();
+  ctx.strokeStyle = '#9090a0'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(28, 18); ctx.quadraticCurveTo(31, 15, 29, 12); ctx.stroke();
+
+  return c;
+}
+
 /** Canvas API로 균열 오버레이 텍스처 생성 (레벨 1~3) */
 function drawCrackOverlay(level: 1 | 2 | 3): HTMLCanvasElement {
   const c = makeCanvas();
@@ -1229,6 +1286,9 @@ export function registerTextures(scene: Phaser.Scene): void {
   // Animals
   scene.textures.addCanvas('animal_deer_idle',      drawDeer('idle'));
   scene.textures.addCanvas('animal_deer_walk',      drawDeer('walk'));
+  scene.textures.addCanvas('animal_wolf_idle',      drawWolf('idle'));
+  scene.textures.addCanvas('animal_wolf_walk',      drawWolf('walk'));
+  scene.textures.addCanvas('animal_wolf_attack',    drawWolf('attack'));
   scene.textures.addCanvas('animal_tiger_idle',     drawTiger('idle'));
   scene.textures.addCanvas('animal_tiger_walk',     drawTiger('walk'));
   scene.textures.addCanvas('animal_tiger_attack',   drawTiger('attack'));

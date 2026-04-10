@@ -16,25 +16,25 @@ export interface WeaponConfig {
 export const WEAPONS: WeaponConfig[] = [
   {
     id: 'fists', name: '맨손', type: 'melee',
-    baseDamage: 5, baseCooldownSec: 2.0, rangeTiles: 1,
+    baseDamage: 5, baseCooldownSec: 1.5, rangeTiles: 1.25,
     recipe: [], craftTimeSec: 0, requiredCraftLevel: 1,
   },
   {
     id: 'bow', name: '활', type: 'ranged',
-    baseDamage: 8, baseCooldownSec: 2.0, rangeTiles: 8,
+    baseDamage: 14, baseCooldownSec: 2.0, rangeTiles: 6.25,
     projectileSpeed: 300,
     recipe: [{ itemId: 'item_wood', amount: 8 }], craftTimeSec: 6,
     requiredCraftLevel: 2,
   },
   {
     id: 'sword_wood', name: '나무 칼', type: 'melee',
-    baseDamage: 14, baseCooldownSec: 1.5, rangeTiles: 1.5,
+    baseDamage: 10, baseCooldownSec: 1.2, rangeTiles: 1.375,
     recipe: [{ itemId: 'item_wood', amount: 6 }], craftTimeSec: 5,
     requiredCraftLevel: 2,
   },
   {
     id: 'sword_stone', name: '석재 칼', type: 'melee',
-    baseDamage: 22, baseCooldownSec: 1.5, rangeTiles: 1.5,
+    baseDamage: 16, baseCooldownSec: 1.0, rangeTiles: 1.375,
     recipe: [
       { itemId: 'item_wood', amount: 4 },
       { itemId: 'item_processed_stone', amount: 4 },
@@ -43,7 +43,7 @@ export const WEAPONS: WeaponConfig[] = [
   },
   {
     id: 'sword_iron', name: '철제 칼', type: 'melee',
-    baseDamage: 18, baseCooldownSec: 1.0, rangeTiles: 1.5,
+    baseDamage: 18, baseCooldownSec: 1.0, rangeTiles: 1.375,
     recipe: [
       { itemId: 'item_processed_stone', amount: 8 },
       { itemId: 'item_wood', amount: 3 },
