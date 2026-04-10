@@ -10,6 +10,7 @@ import { RECIPE_ITEMS, RECIPE_ITEM_IDS } from '../config/recipeItems';
 import { ProficiencySystem, PROF_NAMES } from './ProficiencySystem';
 import { HungerSystem } from './HungerSystem';
 import { FOOD_DEFS } from '../config/foods';
+import { SEED_ITEM_IDS } from '../config/crops';
 
 const STACK_LIMITS: Record<string, number> = {
   item_wood: 99,
@@ -39,6 +40,25 @@ const STACK_LIMITS: Record<string, number> = {
   item_recipe_meat_stew: 1,
   item_blueprint_iron_sword: 1,
   item_blueprint_armor: 1,
+  // Farming tools
+  item_hoe: 1,
+  item_watering_can: 1,
+  // Seeds
+  item_seed_wheat: 20,
+  item_seed_potato: 20,
+  item_seed_carrot: 20,
+  item_seed_pumpkin: 20,
+  // Crops
+  item_wheat: 99,
+  item_potato: 99,
+  item_carrot: 99,
+  item_pumpkin: 99,
+  // Cooked crops
+  item_bread: 20,
+  item_potato_soup: 10,
+  item_carrot_stew: 10,
+  item_pumpkin_porridge: 20,
+  item_baked_potato: 20,
 };
 const DEFAULT_STACK = 99;
 
@@ -70,10 +90,30 @@ const ITEM_NAMES: Record<string, string> = {
   item_recipe_meat_stew:     '고기 스튜 레시피',
   item_blueprint_iron_sword: '철제칼 도면',
   item_blueprint_armor:      '갑옷 도면',
+  // Farming tools
+  item_hoe:          '괭이',
+  item_watering_can: '물뿌리개',
+  // Seeds
+  item_seed_wheat:   '밀 씨앗',
+  item_seed_potato:  '감자 씨앗',
+  item_seed_carrot:  '당근 씨앗',
+  item_seed_pumpkin: '호박 씨앗',
+  // Crops
+  item_wheat:   '밀',
+  item_potato:  '감자',
+  item_carrot:  '당근',
+  item_pumpkin: '호박',
+  // Cooked crops
+  item_bread:             '밀빵',
+  item_potato_soup:       '감자 스프',
+  item_carrot_stew:       '당근 스튜',
+  item_pumpkin_porridge:  '호박죽',
+  item_baked_potato:      '구운 감자',
 };
 
 const WEAPON_ITEM_IDS = new Set(['item_bow', 'item_sword_wood', 'item_sword_stone', 'item_sword_iron']);
 const FOOD_ITEM_IDS   = new Set(Object.keys(FOOD_DEFS));
+const TOOL_ITEM_IDS   = new Set(['item_hoe', 'item_watering_can']);
 const ARMOR_ITEM_IDS  = new Set(Object.keys(ARMOR_DEFS));
 const SHIELD_ITEM_IDS = new Set(Object.keys(SHIELD_DEFS));
 
@@ -91,9 +131,11 @@ export class InventoryUI {
   private hungerSystem: HungerSystem | null = null;
   private onOpenCallback?: () => void;
   private onEatCallback?: () => void;
+  private onToolUseCb?: (itemId: string) => void;
 
   setOnOpen(cb: () => void): void { this.onOpenCallback = cb; }
   setOnEat(cb: () => void): void { this.onEatCallback = cb; }
+  setOnToolUse(cb: (itemId: string) => void): void { this.onToolUseCb = cb; }
 
   constructor(
     private scene: Phaser.Scene,
@@ -257,9 +299,14 @@ export class InventoryUI {
           countDiv.style.color = '#ff8844';
         }
 
+        const isTool = TOOL_ITEM_IDS.has(key);
+        const isSeed = SEED_ITEM_IDS.has(key);
+
         slot.addEventListener('mouseenter', () => {
           if (isWeapon) {
             tooltip.textContent = isEquipped ? '클릭: 장착 해제' : '클릭: 장착';
+          } else if (isTool || isSeed) {
+            tooltip.textContent = '클릭: 사용하기';
           } else if (isArmor || isShield) {
             tooltip.textContent = '우클릭: 장착';
           } else if (isRecipeItem) {
@@ -288,6 +335,9 @@ export class InventoryUI {
         slot.addEventListener('click', () => {
           if (isWeapon) {
             this.handleWeaponClick(key);
+          } else if (isTool || isSeed) {
+            this.onToolUseCb?.(key);
+            this.close();
           } else if (isFood) {
             this.handleFoodClick(key, tooltip);
           } else if (isRecipeItem) {
@@ -461,6 +511,22 @@ export class InventoryUI {
       item_recipe_meat_stew:     '📜',
       item_blueprint_iron_sword: '📋',
       item_blueprint_armor:      '📋',
+      // Farming
+      item_hoe:          '⛏',
+      item_watering_can: '🪣',
+      item_seed_wheat:   '🌾',
+      item_seed_potato:  '🥔',
+      item_seed_carrot:  '🥕',
+      item_seed_pumpkin: '🎃',
+      item_wheat:        '🌾',
+      item_potato:       '🥔',
+      item_carrot:       '🥕',
+      item_pumpkin:      '🎃',
+      item_bread:             '🍞',
+      item_potato_soup:       '🥣',
+      item_carrot_stew:       '🥘',
+      item_pumpkin_porridge:  '🥣',
+      item_baked_potato:      '🥔',
     };
     return map[key] ?? '📦';
   }

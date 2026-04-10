@@ -57,6 +57,9 @@ import { CampfirePanel } from '../ui/CampfirePanel';
 import { NotifySystem } from '../systems/NotifySystem';
 import { LogPanel } from '../ui/LogPanel';
 import { TouchInputSystem, isTouchDevice } from '../systems/TouchInputSystem';
+import { FarmingSystem } from '../systems/FarmingSystem';
+import { SEED_TO_CROP, SEED_ITEM_IDS, CROP_LABELS, CROP_EMOJI } from '../config/crops';
+import { FarmlandSaveEntry } from '../systems/SaveSystem';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -232,6 +235,13 @@ export class GameScene extends Phaser.Scene {
   // 터치 입력 시스템
   private touchInput!: TouchInputSystem;
 
+  // 농업 시스템
+  private farmingSystem!: FarmingSystem;
+  private hoeMode = false;
+  private seedPlantMode: string | null = null; // seed itemId
+  private wateringMode = false;
+  private prevGameDay = -1;
+
   // 날씨 효과
   private lastSeasonForWeather = '';
   private winterHintShown = false;
@@ -352,6 +362,10 @@ export class GameScene extends Phaser.Scene {
         if (key === 'help') this.cheatsheetPanel.toggle();
       });
     }
+
+    // 농업 시스템 초기화
+    this.farmingSystem = new FarmingSystem(this);
+    this.farmingSystem.setOnMatured((msg) => this.notifySystem?.show(msg, 'success'));
 
     // 모닥불 시스템 초기화
     this.campfireSystem = new CampfireSystem(this);
@@ -656,6 +670,95 @@ export class GameScene extends Phaser.Scene {
         return;
       }
 
+      // 농업 모드 처리
+      if (this.hoeMode) {
+        const tx = Math.floor(wx / TILE_SIZE);
+        const ty = Math.floor(wy / TILE_SIZE);
+        const dist = Math.hypot(
+          this.player.sprite.x - (tx * TILE_SIZE + TILE_SIZE / 2),
+          this.player.sprite.y - (ty * TILE_SIZE + TILE_SIZE / 2),
+        );
+        if (this.currentTiles[ty]?.[tx] === TileType.Dirt && !this.buildSystem.getAt(tx, ty) && !this.farmingSystem.isFarmland(tx, ty)) {
+          if (dist <= BUILD_RANGE * 2) {
+            const result = this.farmingSystem.till(tx, ty, this.inventory);
+            if (result === 'broke') {
+              this.showNotificationPopup('괭이가 부서졌습니다', '#ffaa44');
+              this.hoeMode = false;
+            } else if (result === 'ok') {
+              this.showNotificationPopup('경작지를 만들었습니다', '#88dd88');
+            }
+          } else {
+            this.showNotificationPopup('너무 멀습니다', '#ffaa44');
+          }
+        }
+        return;
+      }
+
+      // 씨앗 심기 모드
+      if (this.seedPlantMode) {
+        const tx = Math.floor(wx / TILE_SIZE);
+        const ty = Math.floor(wy / TILE_SIZE);
+        const dist = Math.hypot(
+          this.player.sprite.x - (tx * TILE_SIZE + TILE_SIZE / 2),
+          this.player.sprite.y - (ty * TILE_SIZE + TILE_SIZE / 2),
+        );
+        if (dist > BUILD_RANGE * 2) {
+          this.showNotificationPopup('너무 멀습니다', '#ffaa44');
+          return;
+        }
+        if (this.farmingSystem.isFarmland(tx, ty) && !this.farmingSystem.getCropAt(tx, ty)) {
+          const cropType = SEED_TO_CROP[this.seedPlantMode];
+          const result = this.farmingSystem.plant(tx, ty, cropType, this.inventory, this.gameTime.season);
+          if (result === 'ok') {
+            const label = CROP_LABELS[cropType];
+            this.showNotificationPopup(`🌱 [${label}] 씨앗을 심었습니다`, '#88dd88');
+            if (this.isMultiplayer) this.multiplayerSys.uploadFarmPlant(this.mapX, this.mapY, tx, ty, cropType);
+          } else if (result === 'wrong_season_warn') {
+            const label = CROP_LABELS[cropType];
+            this.showNotificationPopup(`⚠ [${label}]은(는) 이 계절에 자라지 않습니다`, '#ffee44');
+          }
+          if (!this.inventory.has(this.seedPlantMode, 1)) {
+            this.seedPlantMode = null;
+          }
+        }
+        return;
+      }
+
+      // 물 주기 모드
+      if (this.wateringMode) {
+        const tx = Math.floor(wx / TILE_SIZE);
+        const ty = Math.floor(wy / TILE_SIZE);
+        const dist = Math.hypot(
+          this.player.sprite.x - (tx * TILE_SIZE + TILE_SIZE / 2),
+          this.player.sprite.y - (ty * TILE_SIZE + TILE_SIZE / 2),
+        );
+        if (dist > BUILD_RANGE * 2) {
+          this.showNotificationPopup('너무 멀습니다', '#ffaa44');
+          return;
+        }
+        if (this.currentTiles[ty]?.[tx] === TileType.Water) {
+          const filled = this.farmingSystem.waterFromSource(this.inventory);
+          if (filled) this.showNotificationPopup('🪣 물뿌리개를 채웠습니다 (5회)', '#88aaff');
+          else this.showNotificationPopup('물뿌리개가 없습니다', '#ffaa44');
+          return;
+        }
+        if (this.farmingSystem.isFarmland(tx, ty) || this.farmingSystem.getCropAt(tx, ty) !== undefined) {
+          const result = this.farmingSystem.water(tx, ty, this.inventory);
+          if (result === 'ok') {
+            this.showNotificationPopup('물을 주었습니다', '#88aaff');
+          } else if (result === 'no_charges') {
+            this.showNotificationPopup('🪣 비어있습니다. 물 타일을 클릭하면 채울 수 있습니다', '#ffaa44');
+          } else if (result === 'broke') {
+            this.showNotificationPopup('물뿌리개가 부서졌습니다', '#ffaa44');
+            this.wateringMode = false;
+          } else if (result === 'no_can') {
+            this.showNotificationPopup('물뿌리개가 없습니다', '#ffaa44');
+            this.wateringMode = false;
+          }
+        }
+        return;
+      }
+
       if (this.buildSystem.activeDef) {
         const tx = Math.floor(wx / TILE_SIZE);
         const ty = Math.floor(wy / TILE_SIZE);
@@ -755,6 +858,24 @@ export class GameScene extends Phaser.Scene {
           }
           return;
         }
+      }
+
+      // Check for harvestable crop
+      const harvestableCrop = this.farmingSystem?.getHarvestable(wx, wy, 48);
+      if (harvestableCrop) {
+        const px = (ptr.event as MouseEvent).clientX ?? ptr.x;
+        const py = (ptr.event as MouseEvent).clientY ?? ptr.y;
+        this.showHarvestContextMenu(px, py, harvestableCrop.tileX, harvestableCrop.tileY);
+        return;
+      }
+
+      // Check for wild crop
+      const wildCrop = this.farmingSystem?.getWildCropNear(wx, wy, 48);
+      if (wildCrop && !wildCrop.harvested) {
+        const px = (ptr.event as MouseEvent).clientX ?? ptr.x;
+        const py = (ptr.event as MouseEvent).clientY ?? ptr.y;
+        this.showWildCropContextMenu(px, py, wildCrop.id);
+        return;
       }
 
       // Check for structure interaction (workbench, shelf, etc)
@@ -956,6 +1077,13 @@ export class GameScene extends Phaser.Scene {
         this.chatInput.close();
         return;
       }
+      // 농업 모드 중이면 취소
+      if (this.hoeMode || this.seedPlantMode || this.wateringMode) {
+        this.hoeMode = false;
+        this.seedPlantMode = null;
+        this.wateringMode = false;
+        return;
+      }
       // 건설 배치 모드 중이면 취소
       if (this.campfirePlacementMode) {
         this.campfirePlacementMode = false;
@@ -1098,6 +1226,23 @@ export class GameScene extends Phaser.Scene {
       if (cf) {
         cf.fuelMs = data.fuelMs;
         cf.lit = data.lit;
+      }
+    });
+    this.multiplayerSys.onFarmChanged((mapKey, tileKey, data) => {
+      const [mxStr, myStr] = mapKey.split('_');
+      if (Number(mxStr) !== this.mapX || Number(myStr) !== this.mapY) return;
+      const [txStr, tyStr] = tileKey.split('_');
+      const tx = Number(txStr), ty = Number(tyStr);
+      if (data === null) {
+        // remote harvest — just note it (local state handled by own player)
+      } else {
+        const cropType = data.type as import('../config/crops').CropType;
+        if (!this.farmingSystem.isFarmland(tx, ty)) {
+          this.farmingSystem.till(tx, ty, this.inventory);
+        }
+        if (!this.farmingSystem.getCropAt(tx, ty)) {
+          this.farmingSystem.plant(tx, ty, cropType, this.inventory, this.gameTime.season);
+        }
       }
     });
 
@@ -1558,6 +1703,14 @@ export class GameScene extends Phaser.Scene {
     // 모닥불 광원을 LightSystem에 동기화
     this.lightSystem.syncCampfireLights(this.campfireSystem.getLightSources());
 
+    // 농업 시스템 업데이트
+    this.farmingSystem.update(delta);
+    const currentDay = this.gameTime.day;
+    if (this.prevGameDay >= 0 && currentDay !== this.prevGameDay) {
+      this.farmingSystem.onDayEnd(this.weather.getWeather(), this.gameTime.season);
+    }
+    this.prevGameDay = currentDay;
+
     // 방한 효과 알림
     {
       const isWarm = this.campfireSystem.isWarm(this.player.sprite.x, this.player.sprite.y);
@@ -1727,6 +1880,7 @@ export class GameScene extends Phaser.Scene {
     this.chatLog?.destroy();
     this.campfirePanel?.close();
     this.campfireSystem?.destroy();
+    this.farmingSystem?.destroy();
     this.logPanel?.close();
     this.notifySystem?.destroy();
     this.touchInput?.disable();
@@ -1769,6 +1923,9 @@ export class GameScene extends Phaser.Scene {
     this.roofSystem?.clear();
     this.campfireSystem?.clearMap();
     this.campfirePanel?.close();
+    this.farmingSystem?.clearMap();
+    this.farmingSystem?.spawnWildCrops(mx, my, this.currentTiles, this.gameTime.season);
+    this.farmingSystem?.markHarvestedWildCrops();
     this.lastIndoorTileX = -1;
     this.lastIndoorTileY = -1;
     this.playerIsIndoor = false;
@@ -2045,11 +2202,126 @@ export class GameScene extends Phaser.Scene {
     this.campfirePlacementMode = on;
   }
 
+  /** InventoryUI의 도구/씨앗 클릭 → 모드 전환 */
+  handleToolUse(itemId: string): void {
+    this.hoeMode = false;
+    this.seedPlantMode = null;
+    this.wateringMode = false;
+
+    if (itemId === 'item_hoe') {
+      this.hoeMode = true;
+      this.showNotificationPopup('⛏ 경작할 흙 타일을 클릭하세요 (ESC: 취소)', '#88dd88');
+    } else if (itemId === 'item_watering_can') {
+      const ts = this.farmingSystem?.getToolState();
+      if (ts && ts.wateringCanCharges <= 0) {
+        this.showNotificationPopup('🪣 물뿌리개가 비어있습니다. 물 타일 근처에서 클릭하면 채울 수 있습니다.', '#88aaff');
+      }
+      this.wateringMode = true;
+      this.showNotificationPopup('🪣 물 줄 경작지를 클릭하세요 (ESC: 취소)', '#88aaff');
+    } else if (SEED_ITEM_IDS.has(itemId)) {
+      if (!this.inventory.has(itemId, 1)) {
+        this.showNotificationPopup('씨앗이 없습니다', '#ffaa44');
+        return;
+      }
+      this.seedPlantMode = itemId;
+      const cropType = SEED_TO_CROP[itemId];
+      const label = CROP_LABELS[cropType];
+      this.showNotificationPopup(`🌱 [${label}] 씨앗을 심을 경작지를 클릭하세요 (ESC: 취소)`, '#88dd88');
+    }
+  }
+
   private closeBuildPanel(): void {
     this.buildPanel?.remove();
     this.buildPanel = null;
     this.buildSystem?.exitBuildMode();
     this.campfirePlacementMode = false;
+  }
+
+  // ── Farming ───────────────────────────────────────────────────────────────────
+
+  private showHarvestContextMenu(sx: number, sy: number, tx: number, ty: number): void {
+    this.closeContextMenu();
+    const menu = document.createElement('div');
+    menu.style.cssText = `
+      position:fixed; left:${sx}px; top:${sy}px;
+      background:rgba(10,15,25,0.96); border:1px solid #446;
+      border-radius:4px; padding:4px 0; z-index:300; font:12px monospace; color:#eee; min-width:120px;
+    `;
+    const item = document.createElement('div');
+    item.style.cssText = 'padding:6px 12px;cursor:pointer;';
+    item.textContent = '🌾 수확하기';
+    item.addEventListener('mouseenter', () => { item.style.background = '#1a2a3a'; });
+    item.addEventListener('mouseleave', () => { item.style.background = ''; });
+    item.addEventListener('click', () => {
+      const dist = Math.hypot(
+        this.player.sprite.x - (tx * TILE_SIZE + TILE_SIZE / 2),
+        this.player.sprite.y - (ty * TILE_SIZE + TILE_SIZE / 2),
+      );
+      if (dist > BUILD_RANGE * 2) {
+        this.showNotificationPopup('너무 멀습니다', '#ffaa44');
+      } else {
+        const ok = this.farmingSystem.harvest(tx, ty, this.inventory, this.charStats, this.proficiency);
+        if (ok) {
+          this.showNotificationPopup('수확했습니다', '#aaffaa');
+          if (this.isMultiplayer) this.multiplayerSys.uploadFarmHarvest(this.mapX, this.mapY, tx, ty);
+        }
+      }
+      this.closeContextMenu();
+    });
+    menu.appendChild(item);
+    const cancel = document.createElement('div');
+    cancel.style.cssText = 'padding:6px 12px;cursor:pointer;';
+    cancel.textContent = '❌ 취소';
+    cancel.addEventListener('mouseenter', () => { cancel.style.background = '#1a2a3a'; });
+    cancel.addEventListener('mouseleave', () => { cancel.style.background = ''; });
+    cancel.addEventListener('click', () => this.closeContextMenu());
+    menu.appendChild(cancel);
+    document.body.appendChild(menu);
+    this.contextMenu = menu;
+    const closeOnClickOutside = (e: MouseEvent) => {
+      if (!menu.contains(e.target as Node)) {
+        this.closeContextMenu();
+        document.removeEventListener('mousedown', closeOnClickOutside);
+      }
+    };
+    document.addEventListener('mousedown', closeOnClickOutside);
+  }
+
+  private showWildCropContextMenu(sx: number, sy: number, wildCropId: string): void {
+    this.closeContextMenu();
+    const menu = document.createElement('div');
+    menu.style.cssText = `
+      position:fixed; left:${sx}px; top:${sy}px;
+      background:rgba(10,15,25,0.96); border:1px solid #446;
+      border-radius:4px; padding:4px 0; z-index:300; font:12px monospace; color:#eee; min-width:120px;
+    `;
+    const item = document.createElement('div');
+    item.style.cssText = 'padding:6px 12px;cursor:pointer;';
+    item.textContent = '🌿 야생 작물 수확';
+    item.addEventListener('mouseenter', () => { item.style.background = '#1a2a3a'; });
+    item.addEventListener('mouseleave', () => { item.style.background = ''; });
+    item.addEventListener('click', () => {
+      const ok = this.farmingSystem.harvestWild(wildCropId, this.inventory);
+      if (ok) this.showNotificationPopup('야생 작물을 수확했습니다', '#aaffaa');
+      this.closeContextMenu();
+    });
+    menu.appendChild(item);
+    const cancel = document.createElement('div');
+    cancel.style.cssText = 'padding:6px 12px;cursor:pointer;';
+    cancel.textContent = '❌ 취소';
+    cancel.addEventListener('mouseenter', () => { cancel.style.background = '#1a2a3a'; });
+    cancel.addEventListener('mouseleave', () => { cancel.style.background = ''; });
+    cancel.addEventListener('click', () => this.closeContextMenu());
+    menu.appendChild(cancel);
+    document.body.appendChild(menu);
+    this.contextMenu = menu;
+    const closeOnClickOutside = (e: MouseEvent) => {
+      if (!menu.contains(e.target as Node)) {
+        this.closeContextMenu();
+        document.removeEventListener('mousedown', closeOnClickOutside);
+      }
+    };
+    document.addEventListener('mousedown', closeOnClickOutside);
   }
 
   private showBuildContextMenu(screenX: number, screenY: number, tileX: number, tileY: number, isPartial: boolean): void {
@@ -2637,6 +2909,17 @@ export class GameScene extends Phaser.Scene {
           mapX: cf.mapX, mapY: cf.mapY,
           fuelMs: cf.fuelMs, lit: cf.lit, isIndoor: cf.isIndoor,
         })) ?? [],
+        ...(() => {
+          const farm = this.farmingSystem?.serialize();
+          if (!farm) return {};
+          return {
+            farmlands: farm.farmlands.map<FarmlandSaveEntry>(fl => ({
+              ...fl, mapX: this.mapX, mapY: this.mapY,
+            })),
+            harvestedWildCrops: farm.harvestedWildCrops,
+            toolState: farm.toolState,
+          };
+        })(),
         buildings: this.buildSystem.getAllStructures().map(s => ({
           type: s.defName,
           tileX: s.tileX,
@@ -2765,6 +3048,15 @@ export class GameScene extends Phaser.Scene {
           }
         }
       }
+    }
+
+    // 농업 시스템 복원
+    if (this.farmingSystem) {
+      this.farmingSystem.restoreFromSave({
+        farmlands: saveData.world.farmlands,
+        harvestedWildCrops: saveData.world.harvestedWildCrops,
+        toolState: saveData.world.toolState,
+      }, this.mapX, this.mapY);
     }
   }
 

@@ -49,4 +49,15 @@ export const FOOD_DEFS: Record<string, FoodDef> = {
     hpChange: 20,
     poisonChance: 0,
   },
+  // ── 작물 식재료 (날 것)
+  item_wheat: { id: 'item_wheat', name: '밀', hungerRecovery: 5, hpChange: 0, poisonChance: 0 },
+  item_potato: { id: 'item_potato', name: '감자', hungerRecovery: 8, hpChange: 0, poisonChance: 0 },
+  item_carrot: { id: 'item_carrot', name: '당근', hungerRecovery: 8, hpChange: 0, poisonChance: 0 },
+  item_pumpkin: { id: 'item_pumpkin', name: '호박', hungerRecovery: 10, hpChange: 0, poisonChance: 0 },
+  // ── 조리 작물
+  item_bread: { id: 'item_bread', name: '밀빵', hungerRecovery: 35, hpChange: 0, poisonChance: 0 },
+  item_potato_soup: { id: 'item_potato_soup', name: '감자 스프', hungerRecovery: 45, hpChange: 15, poisonChance: 0 },
+  item_carrot_stew: { id: 'item_carrot_stew', name: '당근 스튜', hungerRecovery: 50, hpChange: 25, poisonChance: 0 },
+  item_pumpkin_porridge: { id: 'item_pumpkin_porridge', name: '호박죽', hungerRecovery: 30, hpChange: 10, poisonChance: 0 },
+  item_baked_potato: { id: 'item_baked_potato', name: '구운 감자', hungerRecovery: 20, hpChange: 0, poisonChance: 0 },
 };

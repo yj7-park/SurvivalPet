@@ -172,6 +172,8 @@ export class UIScene extends Phaser.Scene {
     // Tutorial event callbacks
     this.inventoryUI.setOnOpen(() => gs.tutorialSystem?.onEvent('inventory_opened'));
     this.inventoryUI.setOnEat(() => gs.tutorialSystem?.onEvent('food_eaten'));
+    // Tool/seed use callback → delegate to GameScene
+    this.inventoryUI.setOnToolUse((itemId) => (gs as unknown as { handleToolUse: (id: string) => void }).handleToolUse?.(itemId));
 
     // V키: 인벤토리 토글
     this.input.keyboard!.on('keydown-V', () => this.inventoryUI.toggle());

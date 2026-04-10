@@ -1,10 +1,10 @@
 export type ProficiencyType =
   | 'cooking' | 'crafting' | 'building'
-  | 'woodcutting' | 'mining' | 'fishing' | 'combat';
+  | 'woodcutting' | 'mining' | 'fishing' | 'combat' | 'farming';
 
 export const PROF_NAMES: Record<ProficiencyType, string> = {
   cooking: '요리', crafting: '제작', building: '건축',
-  woodcutting: '벌목', mining: '채광', fishing: '낚시', combat: '전투',
+  woodcutting: '벌목', mining: '채광', fishing: '낚시', combat: '전투', farming: '농업',
 };
 
 const MAX_LEVEL = 10;
@@ -26,7 +26,7 @@ export class ProficiencySystem {
   private onLevelUp: ((type: ProficiencyType, newLevel: number) => void) | null = null;
 
   constructor() {
-    const types: ProficiencyType[] = ['cooking', 'crafting', 'building', 'woodcutting', 'mining', 'fishing', 'combat'];
+    const types: ProficiencyType[] = ['cooking', 'crafting', 'building', 'woodcutting', 'mining', 'fishing', 'combat', 'farming'];
     for (const t of types) {
       this.data.set(t, { level: 1, xp: 0, totalXp: 0 });
     }

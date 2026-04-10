@@ -27,6 +27,7 @@ export const DROP_TABLES: Record<string, DropTable> = {
     drops: [
       { itemId: 'item_wood',                   amountMin: 3, amountMax: 5, chance: 0.50 },
       { itemId: 'item_blueprint_iron_sword',   amountMin: 1, amountMax: 1, chance: 0.05 },
+      { itemId: 'item_seed_wheat',             amountMin: 1, amountMax: 2, chance: 0.05 },
     ],
   },
   enemy_raider_boss: {

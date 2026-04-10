@@ -1312,6 +1312,170 @@ function drawCampfire(state: 'large' | 'medium' | 'small' | 'ash'): HTMLCanvasEl
   return c;
 }
 
+// ── Farming sprites ────────────────────────────────────────────────────────────
+
+function drawFarmland(wet: boolean): HTMLCanvasElement {
+  const c = makeCanvas();
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = wet ? '#3d2010' : '#7a4a28';
+  ctx.fillRect(0, 0, TILE, TILE);
+  // Plow lines
+  ctx.strokeStyle = wet ? '#2a1508' : '#5a3015';
+  ctx.lineWidth = 1;
+  for (let y = 4; y < TILE; y += 6) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(TILE, y); ctx.stroke();
+  }
+  // Wet sheen
+  if (wet) {
+    ctx.fillStyle = 'rgba(80,120,180,0.15)';
+    ctx.fillRect(0, 0, TILE, TILE);
+  }
+  return c;
+}
+
+function drawCropStage(type: 'wheat' | 'potato' | 'carrot' | 'pumpkin', stage: 0 | 1 | 2): HTMLCanvasElement {
+  const c = makeCanvas();
+  const ctx = c.getContext('2d')!;
+  const cx = TILE / 2, by = TILE - 4;
+
+  if (stage === 0) {
+    // Tiny sprout
+    ctx.fillStyle = '#88cc44';
+    ctx.fillRect(cx - 1, by - 6, 2, 6);
+    ctx.fillRect(cx - 3, by - 8, 4, 3);
+    return c;
+  }
+
+  if (type === 'wheat') {
+    const color = stage === 2 ? '#ddbb22' : '#66aa33';
+    ctx.fillStyle = color;
+    ctx.fillRect(cx - 1, by - (stage === 2 ? 16 : 10), 2, stage === 2 ? 16 : 10);
+    if (stage === 2) {
+      for (let i = 0; i < 4; i++) {
+        ctx.fillRect(cx - 2 + i, by - 16 - i, 3, 4);
+      }
+    } else {
+      ctx.fillRect(cx - 3, by - 12, 4, 4);
+    }
+  } else if (type === 'potato') {
+    ctx.fillStyle = '#55aa22';
+    ctx.fillRect(cx - 2, by - (stage === 2 ? 14 : 8), 4, stage === 2 ? 14 : 8);
+    if (stage === 2) {
+      ctx.fillStyle = '#cc9933';
+      for (let i = -2; i <= 2; i++) {
+        ctx.fillRect(cx + i * 3 - 2, by - 2, 4, 4);
+      }
+    }
+  } else if (type === 'carrot') {
+    ctx.fillStyle = '#33aa33';
+    ctx.fillRect(cx - 1, by - (stage === 2 ? 14 : 8), 2, stage === 2 ? 14 : 8);
+    if (stage === 2) {
+      ctx.fillStyle = '#ee6600';
+      ctx.beginPath(); ctx.moveTo(cx - 4, by - 10); ctx.lineTo(cx, by + 2); ctx.lineTo(cx + 4, by - 10); ctx.fill();
+    }
+  } else if (type === 'pumpkin') {
+    ctx.fillStyle = '#66aa22';
+    ctx.fillRect(cx - 1, by - (stage === 2 ? 12 : 7), 2, stage === 2 ? 12 : 7);
+    if (stage === 2) {
+      ctx.fillStyle = '#ee7700';
+      ctx.beginPath(); ctx.ellipse(cx, by - 4, 8, 6, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#cc5500';
+      ctx.fillRect(cx - 1, by - 10, 2, 3);
+    } else {
+      ctx.fillStyle = '#cc7700';
+      ctx.beginPath(); ctx.ellipse(cx, by - 2, 5, 4, 0, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  return c;
+}
+
+function drawItemTool(type: 'hoe' | 'watering_can'): HTMLCanvasElement {
+  const c = makeCanvas(16, 16);
+  const ctx = c.getContext('2d')!;
+  if (type === 'hoe') {
+    // Stick
+    ctx.fillStyle = '#a06030';
+    ctx.fillRect(7, 2, 2, 10);
+    // Blade
+    ctx.fillStyle = '#888888';
+    ctx.fillRect(3, 2, 10, 3);
+  } else {
+    // Can body
+    ctx.fillStyle = '#4488cc';
+    ctx.fillRect(3, 6, 10, 8);
+    // Spout
+    ctx.fillStyle = '#336699';
+    ctx.fillRect(11, 4, 3, 4);
+    // Handle
+    ctx.fillRect(2, 3, 2, 8);
+    // Water dots
+    ctx.fillStyle = '#aaddff';
+    for (let i = 0; i < 3; i++) ctx.fillRect(12 + i, 2 - i, 1, 1);
+  }
+  return c;
+}
+
+function drawCropItem(type: 'wheat' | 'potato' | 'carrot' | 'pumpkin'): HTMLCanvasElement {
+  const c = makeCanvas(16, 16);
+  const ctx = c.getContext('2d')!;
+  if (type === 'wheat') {
+    ctx.fillStyle = '#ddbb22';
+    ctx.fillRect(7, 4, 2, 8);
+    for (let i = 0; i < 3; i++) ctx.fillRect(5 + i * 2, 3 + i, 4, 3);
+  } else if (type === 'potato') {
+    ctx.fillStyle = '#cc9944';
+    ctx.beginPath(); ctx.ellipse(8, 9, 5, 4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#aa7733';
+    ctx.fillRect(7, 6, 2, 3);
+  } else if (type === 'carrot') {
+    ctx.fillStyle = '#ee6600';
+    ctx.beginPath(); ctx.moveTo(5, 6); ctx.lineTo(11, 6); ctx.lineTo(8, 14); ctx.fill();
+    ctx.fillStyle = '#33aa33';
+    ctx.fillRect(7, 3, 2, 4);
+  } else if (type === 'pumpkin') {
+    ctx.fillStyle = '#ee7700';
+    ctx.beginPath(); ctx.ellipse(8, 10, 6, 5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#33aa22';
+    ctx.fillRect(7, 5, 2, 4);
+  }
+  return c;
+}
+
+function drawSeedItem(type: 'wheat' | 'potato' | 'carrot' | 'pumpkin'): HTMLCanvasElement {
+  const c = makeCanvas(16, 16);
+  const ctx = c.getContext('2d')!;
+  const colors: Record<string, string> = { wheat: '#ddbb44', potato: '#cc9944', carrot: '#ee8833', pumpkin: '#ee7700' };
+  ctx.fillStyle = colors[type] ?? '#aaaaaa';
+  ctx.beginPath(); ctx.ellipse(8, 9, 3, 4, 0.3, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#66aa33';
+  ctx.fillRect(8, 4, 1, 4);
+  return c;
+}
+
+function drawFoodItem(type: 'bread' | 'potato_soup' | 'carrot_stew' | 'pumpkin_porridge' | 'baked_potato'): HTMLCanvasElement {
+  const c = makeCanvas(16, 16);
+  const ctx = c.getContext('2d')!;
+  if (type === 'bread') {
+    ctx.fillStyle = '#cc9944';
+    ctx.beginPath(); ctx.ellipse(8, 9, 6, 4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ddbb66';
+    ctx.beginPath(); ctx.ellipse(8, 8, 4, 2, 0, 0, Math.PI * 2); ctx.fill();
+  } else if (type === 'baked_potato') {
+    ctx.fillStyle = '#886633';
+    ctx.beginPath(); ctx.ellipse(8, 9, 5, 4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#aaaaaa';
+    ctx.fillRect(5, 6, 6, 1);
+  } else {
+    // Bowl of soup/stew
+    const bowlColors: Record<string, string> = { potato_soup: '#cc9944', carrot_stew: '#cc5500', pumpkin_porridge: '#cc7700' };
+    ctx.fillStyle = '#7a5a3a';
+    ctx.beginPath(); ctx.arc(8, 10, 5, 0, Math.PI); ctx.fill();
+    ctx.fillStyle = bowlColors[type] ?? '#cc8844';
+    ctx.beginPath(); ctx.ellipse(8, 8, 4, 2, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  return c;
+}
+
 export function registerTextures(scene: Phaser.Scene): void {
   if (scene.textures.exists('tile_dirt')) return;
 
@@ -1423,4 +1587,38 @@ export function registerTextures(scene: Phaser.Scene): void {
   scene.textures.addCanvas('campfire_medium', drawCampfire('medium'));
   scene.textures.addCanvas('campfire_small',  drawCampfire('small'));
   scene.textures.addCanvas('campfire_ash',    drawCampfire('ash'));
+
+  // Farmland sprites
+  scene.textures.addCanvas('farmland_dry', drawFarmland(false));
+  scene.textures.addCanvas('farmland_wet', drawFarmland(true));
+
+  // Crop sprites (4 types × 3 stages)
+  for (const type of ['wheat', 'potato', 'carrot', 'pumpkin'] as const) {
+    for (const stage of [0, 1, 2] as const) {
+      scene.textures.addCanvas(`crop_${type}_${stage}`, drawCropStage(type, stage));
+    }
+  }
+
+  // Farming tool items
+  scene.textures.addCanvas('item_hoe',          drawItemTool('hoe'));
+  scene.textures.addCanvas('item_watering_can', drawItemTool('watering_can'));
+
+  // Crop food items
+  scene.textures.addCanvas('item_wheat',   drawCropItem('wheat'));
+  scene.textures.addCanvas('item_potato',  drawCropItem('potato'));
+  scene.textures.addCanvas('item_carrot',  drawCropItem('carrot'));
+  scene.textures.addCanvas('item_pumpkin', drawCropItem('pumpkin'));
+
+  // Seed items
+  scene.textures.addCanvas('item_seed_wheat',   drawSeedItem('wheat'));
+  scene.textures.addCanvas('item_seed_potato',  drawSeedItem('potato'));
+  scene.textures.addCanvas('item_seed_carrot',  drawSeedItem('carrot'));
+  scene.textures.addCanvas('item_seed_pumpkin', drawSeedItem('pumpkin'));
+
+  // Cooked crop food items
+  scene.textures.addCanvas('item_bread',            drawFoodItem('bread'));
+  scene.textures.addCanvas('item_potato_soup',      drawFoodItem('potato_soup'));
+  scene.textures.addCanvas('item_carrot_stew',      drawFoodItem('carrot_stew'));
+  scene.textures.addCanvas('item_pumpkin_porridge', drawFoodItem('pumpkin_porridge'));
+  scene.textures.addCanvas('item_baked_potato',     drawFoodItem('baked_potato'));
 }

@@ -55,9 +55,22 @@ export interface CampfireSaveEntry {
   isIndoor: boolean;
 }
 
+export interface FarmlandSaveEntry {
+  tileX: number;
+  tileY: number;
+  mapX: number;
+  mapY: number;
+  isWet: boolean;
+  wetUntil: number;
+  crop?: { type: string; stage: 0 | 1 | 2; growthProgress: number };
+}
+
 export interface WorldSaveData {
   buildings: BuildingSaveEntry[];
   campfires?: CampfireSaveEntry[];
+  farmlands?: FarmlandSaveEntry[];
+  harvestedWildCrops?: string[];
+  toolState?: { hoeDurability: number; wateringCanDurability: number; wateringCanCharges: number };
   clearedTrees: Array<{ tileX: number; tileY: number; regrowAt?: number }>;
   clearedRocks: Array<{ tileX: number; tileY: number }>;
   gameTime: {

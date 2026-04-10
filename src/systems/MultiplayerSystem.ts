@@ -56,6 +56,7 @@ export class MultiplayerSystem {
   private onTreeCutCb?: (mapX: number, mapY: number, tileX: number, tileY: number) => void;
   private onRockMinedCb?: (mapX: number, mapY: number, tileX: number, tileY: number) => void;
   private onCampfireChangedCb?: (id: string, data: { fuelMs: number; lit: boolean } | null) => void;
+  private onFarmChangedCb?: (mapKey: string, tileKey: string, data: { type: string; stage: number; growthProgress: number; isWet: boolean } | null) => void;
 
   private localName = '생존자';
   private localSkin = 0;
@@ -233,6 +234,21 @@ export class MultiplayerSystem {
   onTreeCut(cb: (mapX: number, mapY: number, tileX: number, tileY: number) => void): void { this.onTreeCutCb = cb; }
   onRockMined(cb: (mapX: number, mapY: number, tileX: number, tileY: number) => void): void { this.onRockMinedCb = cb; }
   onCampfireChanged(cb: (id: string, data: { fuelMs: number; lit: boolean } | null) => void): void { this.onCampfireChangedCb = cb; }
+  onFarmChanged(cb: (mapKey: string, tileKey: string, data: { type: string; stage: number; growthProgress: number; isWet: boolean } | null) => void): void { this.onFarmChangedCb = cb; }
+
+  uploadFarmPlant(mapX: number, mapY: number, tileX: number, tileY: number, type: string): void {
+    if (!this.isEnabled) return;
+    const mapKey = `${mapX}_${mapY}`;
+    const tileKey = `${tileX}_${tileY}`;
+    set(ref(this.db, `rooms/${this.seed}/farms/${mapKey}/${tileKey}`), { type, stage: 0, growthProgress: 0, isWet: false });
+  }
+
+  uploadFarmHarvest(mapX: number, mapY: number, tileX: number, tileY: number): void {
+    if (!this.isEnabled) return;
+    const mapKey = `${mapX}_${mapY}`;
+    const tileKey = `${tileX}_${tileY}`;
+    set(ref(this.db, `rooms/${this.seed}/farms/${mapKey}/${tileKey}`), null);
+  }
 
   uploadCampfireFuel(id: string, fuelMs: number): void {
     if (!this.isEnabled) return;
@@ -340,6 +356,18 @@ export class MultiplayerSystem {
       if (!data) return;
       for (const [id, val] of Object.entries(data)) {
         this.onCampfireChangedCb?.(id, val);
+      }
+    });
+
+    const farmsRef = ref(this.db, `rooms/${this.seed}/farms`);
+    this.worldListenerRefs.push(farmsRef);
+    onValue(farmsRef, (snap) => {
+      const data = snap.val() as Record<string, Record<string, { type: string; stage: number; growthProgress: number; isWet: boolean }>> | null;
+      if (!data) return;
+      for (const [mapKey, tiles] of Object.entries(data)) {
+        for (const [tileKey, val] of Object.entries(tiles)) {
+          this.onFarmChangedCb?.(mapKey, tileKey, val);
+        }
       }
     });
   }

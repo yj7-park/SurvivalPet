@@ -15,6 +15,7 @@ export type CampfireCookRecipe = {
 export const CAMPFIRE_RECIPES: CampfireCookRecipe[] = [
   { id: 'grill_fish', name: '생선 굽기', icon: '🐟', inputItem: 'item_raw_fish', outputItem: 'item_cooked_fish', cookTimeSec: 10 },
   { id: 'grill_meat', name: '고기 굽기', icon: '🥩', inputItem: 'item_raw_meat', outputItem: 'item_cooked_meat', cookTimeSec: 10 },
+  { id: 'bake_potato', name: '감자 굽기', icon: '🥔', inputItem: 'item_potato', outputItem: 'item_baked_potato', cookTimeSec: 10 },
 ];
 
 export class CampfirePanel {
