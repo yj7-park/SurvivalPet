@@ -28,6 +28,7 @@ import { EquipmentSystem } from '../systems/EquipmentSystem';
 import { DropSystem } from '../systems/DropSystem';
 import { SaveSystem, SaveData } from '../systems/SaveSystem';
 import { PauseMenu } from '../ui/PauseMenu';
+import { ActionSystem } from '../systems/ActionSystem';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -110,6 +111,12 @@ export class GameScene extends Phaser.Scene {
   // 채굴된 암반 추적
   private clearedRocks: { tx: number; ty: number }[] = [];
 
+  // 행복 수치 & 광란
+  private actionSystem = new ActionSystem();
+  private frenzyAura!: Phaser.GameObjects.Arc;
+  private frenzyRng!: SeededRandom;
+  private prevForcedSleep = false;
+
   // 건설 자동이동
   private buildAutoMoveTarget: { worldX: number; worldY: number } | null = null;
   private pendingBuild: { defName: string; material: StructMaterial; tileX: number; tileY: number } | null = null;
@@ -174,6 +181,11 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.player.sprite, true);
     this.cameras.main.setZoom(2);
 
+    // 광란 오라 (플레이어 주변 빨간 원)
+    this.frenzyAura = this.add.arc(0, 0, 16, 0, 360, false, 0xff2222, 0.5)
+      .setDepth(5).setVisible(false);
+    this.frenzyRng = new SeededRandom(`${this.seed}_frenzy`);
+
     this.multiplayer = new MultiplayerSync(this.seed, playerId);
     this.multiplayer.onPlayersUpdate((players) => this.updateOtherPlayers(players));
 
@@ -185,14 +197,16 @@ export class GameScene extends Phaser.Scene {
     this.invasion = new InvasionSystem(this, this.gameTime, this.seed, playerId);
     this.commandQueue = new CommandQueue();
 
-    // 건설 완료 시 큐 진행 + XP
+    // 건설 완료 시 큐 진행 + XP + 행복
     this.buildSystem.setBuildCompleteCallback(() => {
       this.proficiency.addXP('building', 15);
+      this.actionSystem.onActionDone('build', this.survival);
       this.commandQueue.completeCommand();
       this.processNextQueueCommand();
     });
     this.buildSystem.setDemolishCompleteCallback(() => {
       this.proficiency.addXP('building', 8);
+      this.actionSystem.onActionDone('demolish', this.survival);
     });
     this.commandQueueUI = new CommandQueueUI(this.commandQueue);
     this.shelfUI = new ShelfUI();
@@ -216,6 +230,10 @@ export class GameScene extends Phaser.Scene {
     this.interaction.setOnResourceGathered((type) => {
       const xpMap: Record<string, number> = { woodcutting: 8, mining: 8, fishing: 10 };
       this.proficiency.addXP(type as ProficiencyType, xpMap[type] ?? 8);
+      const actionMap: Record<string, import('../systems/ActionSystem').ActionType> = {
+        woodcutting: 'woodcut', mining: 'mine', fishing: 'fish',
+      };
+      if (actionMap[type]) this.actionSystem.onActionDone(actionMap[type], this.survival);
     });
 
     // Spawn animals on current map
@@ -244,6 +262,7 @@ export class GameScene extends Phaser.Scene {
     });
     this.combat.setOnKillCallback(() => {
       this.proficiency.addXP('combat', 20);
+      this.actionSystem.onActionDone('kill_enemy', this.survival);
     });
 
     // Pointer events — use ptr.worldX/worldY (Phaser applies camera matrix correctly)
@@ -559,6 +578,7 @@ export class GameScene extends Phaser.Scene {
     const completedResearch = this.research.update(delta);
     if (completedResearch) {
       this.proficiency.unlockByResearch(completedResearch.id);
+      this.actionSystem.onActionDone('research', this.survival);
       this.showNotificationPopup(`✅ ${completedResearch.label.replace('🔬 ', '')} 연구 완료!`, '#88ffaa');
       if (this.workbenchPanel) this.refreshWorkbenchPanel(this.workbenchPanel, 'research');
     }
@@ -589,16 +609,37 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Frenzy damages structures once per second
+    // 광란 자동 공격 (1.5초 간격)
     if (this.survival.isFrenzy) {
       this.frenzyDamageTimer -= delta;
       if (this.frenzyDamageTimer <= 0) {
-        this.frenzyDamageTimer = 1000;
-        this.buildSystem.damageFrenzy();
+        this.frenzyDamageTimer = 1500;
+        this.doFrenzyAttack();
+      }
+      // 광란 오라 펄스
+      if (this.frenzyAura) {
+        const pulse = 0.3 + Math.abs(Math.sin(this.time.now * 0.008)) * 0.3;
+        this.frenzyAura
+          .setVisible(true)
+          .setAlpha(pulse)
+          .setPosition(this.player.sprite.x, this.player.sprite.y);
       }
     } else {
       this.frenzyDamageTimer = 0;
+      this.frenzyAura?.setVisible(false);
     }
+
+    // 수면 완료 감지 → action 회복
+    const nowForcedSleep = this.survival.isForcedSleep;
+    if (this.prevForcedSleep && !nowForcedSleep) {
+      this.actionSystem.onActionDone('sleep', this.survival);
+    }
+    this.prevForcedSleep = nowForcedSleep;
+
+    // 행복 수치 경고
+    this.actionSystem.checkWarnings(this.survival.action, (msg, color) => {
+      this.showNotificationPopup(msg, color);
+    });
 
     // Combat update (lock-on, projectiles, damage floats)
     this.combat.update(delta);
@@ -1277,7 +1318,7 @@ export class GameScene extends Phaser.Scene {
             status.textContent = `제작 중… (${(ms / 1000).toFixed(1)}s)`;
             this.time.delayedCall(ms, () => {
               this.inventory.add(`item_${weapon.id}`, 1);
-              this.survival.addAction(12);
+              this.actionSystem.onActionDone('craft', this.survival);
               this.proficiency.addXP('crafting', 15);
               status.textContent = `${weapon.name} 제작 완료!`;
               this.refreshWorkbenchPanel(panel, activeTab);
@@ -1311,7 +1352,7 @@ export class GameScene extends Phaser.Scene {
             status.textContent = `제작 중… (${(ms / 1000).toFixed(1)}s)`;
             this.time.delayedCall(ms, () => {
               this.inventory.add(recipe.output.itemId, recipe.output.amount);
-              this.survival.addAction(12);
+              this.actionSystem.onActionDone('craft', this.survival);
               this.proficiency.addXP('crafting', 15);
               status.textContent = `${recipe.label} 완료!`;
               this.refreshWorkbenchPanel(panel, activeTab);
@@ -1490,6 +1531,56 @@ export class GameScene extends Phaser.Scene {
       popup.style.opacity = '0';
       setTimeout(() => popup.remove(), 1500);
     }, 200);
+  }
+
+  // ── 광란 자동 공격 ───────────────────────────────────────────────────────────
+
+  private doFrenzyAttack(): void {
+    const px = this.player.sprite.x, py = this.player.sprite.y;
+    const FRENZY_RANGE = 128;
+    const FRENZY_DMG = 15;
+
+    // 1순위: 범위 내 살아있는 동물
+    const animals = this.animalMgr.getAnimals().filter(a => !a.isDead &&
+      Math.hypot(a.x - px, a.y - py) <= FRENZY_RANGE,
+    );
+
+    if (animals.length > 0) {
+      animals.sort((a, b) => Math.hypot(a.x-px,a.y-py) - Math.hypot(b.x-px,b.y-py));
+      const target = animals[0];
+      const drops = this.animalMgr.attackAnimal(target, FRENZY_DMG, px, py, this.frenzyRng);
+      drops.forEach(d => this.inventory.add(d.itemKey, d.count));
+      this.effects.spawnFloatText(target.x, target.y - 20, `-${FRENZY_DMG}`, '#ff4444');
+      if (target.isDead) {
+        this.actionSystem.onActionDone('kill_enemy', this.survival);
+        this.proficiency.addXP('combat', 10);
+      }
+      return;
+    }
+
+    // 2순위: 범위 내 가장 가까운 건설물
+    let closestStruct = null;
+    let closestDist = Infinity;
+    for (const s of this.buildSystem.getAllStructures()) {
+      const sx = s.tileX * TILE_SIZE + TILE_SIZE / 2;
+      const sy = s.tileY * TILE_SIZE + TILE_SIZE / 2;
+      const d = Math.hypot(sx - px, sy - py);
+      if (d < closestDist && d <= FRENZY_RANGE) {
+        closestDist = d;
+        closestStruct = s;
+      }
+    }
+    if (closestStruct) {
+      closestStruct.durability -= 15;
+      this.effects.spawnFloatText(
+        closestStruct.tileX * TILE_SIZE + TILE_SIZE / 2,
+        closestStruct.tileY * TILE_SIZE - 4,
+        '-15', '#ff8844',
+      );
+      if (closestStruct.durability <= 0) {
+        this.buildSystem.removeStructureAt(closestStruct.tileX, closestStruct.tileY);
+      }
+    }
   }
 
   // ── 저장 / 불러오기 ──────────────────────────────────────────────────────────
@@ -1774,7 +1865,7 @@ export class GameScene extends Phaser.Scene {
     const canAdd = this.inventory.canAdd(recipe.output.itemId);
     if (canAdd) {
       this.inventory.add(recipe.output.itemId, recipe.output.amount);
-      this.survival.addAction(8);
+      this.actionSystem.onActionDone('cook', this.survival);
       const xp = recipe.output.amount >= 2 ? 20 : 12;
       this.proficiency.addXP('cooking', xp);
       if (statusEl) statusEl.textContent = `${recipe.label} 완료!`;

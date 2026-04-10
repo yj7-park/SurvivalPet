@@ -369,7 +369,7 @@ export class BuildSystem {
       durability: maxDur, maxDurability: maxDur, sprite,
     });
 
-    survival.addAction(15);
+    void survival; // action recovery handled by GameScene buildCompleteCallback
     this.buildTarget = null;
     this.buildProgressMs = 0;
     this.buildProgressBg.setVisible(false);
@@ -437,6 +437,16 @@ export class BuildSystem {
   getAllStructures(): PlacedStructure[] { return [...this.structures.values()]; }
   /** 부분 건축 목록 반환 */
   getAllPartialBuilds(): PartialBuild[] { return [...this.partialBuilds.values()]; }
+
+  /** 즉시 구조물 제거 (광란 파괴 등) */
+  removeStructureAt(tileX: number, tileY: number): void {
+    const id = this.tileKey(tileX, tileY);
+    const s = this.structures.get(id);
+    if (s) {
+      s.sprite.destroy();
+      this.structures.delete(id);
+    }
+  }
 
   /** 저장 데이터에서 구조물 즉시 복원 (건설 진행 없이) */
   forceRestoreStructure(

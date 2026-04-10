@@ -11,6 +11,7 @@ export class SurvivalStats {
   isForcedSleep = false;
   isFrenzy = false;
   frenzyTimer = 0;
+  frenzyCooldown = 0; // ms — 광란 종료 후 5초간 재진입 방지
 
   private hungerDebuff = 0; // max HP reduction from starvation
 
@@ -46,8 +47,14 @@ export class SurvivalStats {
       if (this.fatigue >= 30) this.isForcedSleep = false;
     }
 
+    // 광란 쿨다운 처리
+    if (this.frenzyCooldown > 0) {
+      this.frenzyCooldown -= delta;
+      if (this.action < 1) this.action = 1; // 쿨다운 중 action 바닥 1 고정
+    }
+
     // Action → frenzy (30s)
-    if (this.action === 0 && !this.isFrenzy && !this.isForcedSleep) {
+    if (this.action <= 0 && !this.isFrenzy && !this.isForcedSleep && this.frenzyCooldown <= 0) {
       this.isFrenzy = true;
       this.frenzyTimer = 30_000;
     }
@@ -55,7 +62,8 @@ export class SurvivalStats {
       this.frenzyTimer -= delta;
       if (this.frenzyTimer <= 0) {
         this.isFrenzy = false;
-        this.action = Math.min(100, this.action + 20);
+        this.action = 25; // 광란 종료 후 행복 수치 25로 회복
+        this.frenzyCooldown = 5_000; // 5초 재진입 방지
       }
     }
   }

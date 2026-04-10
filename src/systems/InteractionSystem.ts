@@ -156,7 +156,7 @@ export class InteractionSystem {
         );
         drops.forEach(d => { this.inventory.add(d.itemKey, d.count); });
         this.attackCooldown = this.stats.attackCooldown;
-        this.survival.addAction(5);
+        // action recovery handled by kill callback in CombatSystem/GameScene
       }
       return;
     }
@@ -247,21 +247,17 @@ export class InteractionSystem {
 
     if (tileType === TileType.Tree) {
       this.inventory.add('item_wood', 20);
-      this.survival.addAction(10);
       this.onTileCleared?.(tileX, tileY);
       this.onResourceGathered?.('woodcutting');
     } else if (tileType === TileType.Rock) {
       this.inventory.add('item_stone', 10);
-      this.survival.addAction(10);
       this.onTileCleared?.(tileX, tileY);
       this.onResourceGathered?.('mining');
     } else if (tileType === TileType.Water) {
       const success = this.rng.next() < this.stats.fishRate;
-      if (success) {
-        this.inventory.add('item_fish', 1);
-        this.onResourceGathered?.('fishing');
-      }
-      this.survival.addAction(8);
+      if (success) this.inventory.add('item_fish', 1);
+      // 낚시는 성공·실패 무관 action 회복 → onResourceGathered 항상 호출
+      this.onResourceGathered?.('fishing');
     }
 
     this.cancelProgress();

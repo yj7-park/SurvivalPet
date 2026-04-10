@@ -162,7 +162,6 @@ export class CombatSystem {
     drops.forEach(d => this.inventory.add(d.itemKey, d.count));
     this.spawnFloatText(tx, ty - 20, `-${dmg}`, '#ff6666');
     if (target.isDead) {
-      this.survival.addAction(10);
       this.onKillCallback?.();
       this.onAnimalKillCallback?.(tx, ty, animalType);
       this.unlock();
@@ -209,7 +208,6 @@ export class CombatSystem {
           this.spawnFloatText(target.x, target.y - 20, `-${dmg}`, '#ff6666');
           this.spawnHitFlash(target.x, target.y);
           if (target.isDead) {
-            this.survival.addAction(10);
             this.onKillCallback?.();
             this.onAnimalKillCallback?.(target.x, target.y, target.config.type as string);
             if (this.lockedTarget === target) this.unlock();

@@ -34,8 +34,10 @@ export class UIScene extends Phaser.Scene {
     fatigue: { bg: Phaser.GameObjects.Rectangle; fill: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text };
     action:  { bg: Phaser.GameObjects.Rectangle; fill: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text };
   };
+  private hudFrenzyCountdown!: Phaser.GameObjects.Text;
   private hudCharStats!: Phaser.GameObjects.Text;
   private hudInventoryText!: Phaser.GameObjects.Text;
+  private prevFrenzy = false;
 
   constructor() { super({ key: 'UIScene' }); }
 
@@ -81,6 +83,12 @@ export class UIScene extends Phaser.Scene {
       fatigue: makebar(by0 + 28, 0x4080e0, 'Fatigue'),
       action:  makebar(by0 + 42, 0x40c060, 'Action'),
     };
+
+    // 광란 카운트다운 텍스트 (우상단)
+    this.hudFrenzyCountdown = this.add.text(W - 110, by0 + 58, '', {
+      fontSize: '12px', color: '#ff4444', fontFamily: 'monospace',
+      fontStyle: 'bold', backgroundColor: '#00000099', padding: { x: 5, y: 2 },
+    }).setDepth(100).setVisible(false);
 
     // ── 좌하단: 캐릭터 스탯 + 인벤토리 요약 ─────────────────
     this.hudCharStats = this.add.text(8, H - 20, '', {
@@ -145,6 +153,33 @@ export class UIScene extends Phaser.Scene {
     this.hudStatBars.fatigue.fill.setSize(BAR_W * (s.fatigue / 100), 7);
     this.hudStatBars.action.fill.setSize(BAR_W * (s.action / 100), 7);
 
+    // 행복 수치 게이지 색상 (정상→주의→경고→위험)
+    const av = s.action;
+    const actionColor = av > 40 ? 0x40c060 : av > 20 ? 0xe0c020 : av > 10 ? 0xe06020 : 0xe03030;
+    this.hudStatBars.action.fill.setFillStyle(actionColor);
+
+    // 광란 진입/종료 알림
+    if (s.isFrenzy && !this.prevFrenzy) {
+      this.showFrenzyEntryEffect();
+    } else if (!s.isFrenzy && this.prevFrenzy) {
+      this.showNoticeText('광란 상태가 해제되었습니다', '#aaffaa');
+    }
+    this.prevFrenzy = s.isFrenzy;
+
+    // 광란 카운트다운
+    if (s.isFrenzy) {
+      const sec = Math.ceil(s.frenzyTimer / 1000);
+      const mm = String(Math.floor(sec / 60)).padStart(2, '0');
+      const ss = String(sec % 60).padStart(2, '0');
+      this.hudFrenzyCountdown.setText(`⚡ 광란  [${mm}:${ss}]`).setVisible(true);
+      // 게이지 깜빡임
+      const blink = Math.floor(this.time.now / 300) % 2 === 0;
+      this.hudStatBars.action.fill.setVisible(blink);
+    } else {
+      this.hudFrenzyCountdown.setVisible(false);
+      this.hudStatBars.action.fill.setVisible(true);
+    }
+
     this.hudStatBars.hp.label.setText(`HP ${Math.ceil(s.hp)}/${s.maxHp}`);
     this.hudStatBars.hunger.label.setText('Hunger');
     this.hudStatBars.fatigue.label.setText('Fatigue');
@@ -177,6 +212,38 @@ export class UIScene extends Phaser.Scene {
     // 인벤토리 UI 업데이트 (무기 HUD 포함)
     this.inventoryUI.update();
     this.equipmentPanel.update();
+  }
+
+  private showNoticeText(msg: string, color: string): void {
+    const W = this.scale.width;
+    const H = this.scale.height;
+    const txt = this.add.text(W / 2, H / 2 + 40, msg, {
+      fontSize: '14px', color, fontFamily: 'monospace',
+      backgroundColor: '#00000099', padding: { x: 10, y: 5 },
+    }).setDepth(200).setOrigin(0.5);
+    this.tweens.add({
+      targets: txt,
+      alpha: 0,
+      duration: 800,
+      delay: 1400,
+      onComplete: () => txt.destroy(),
+    });
+  }
+
+  private showFrenzyEntryEffect(): void {
+    const W = this.scale.width;
+    const H = this.scale.height;
+    const txt = this.add.text(W / 2, H / 2, '⚡ 광란 상태!', {
+      fontSize: '24px', color: '#ff3333', fontFamily: 'monospace',
+      fontStyle: 'bold', backgroundColor: '#00000099', padding: { x: 12, y: 6 },
+    }).setDepth(200).setOrigin(0.5);
+    this.tweens.add({
+      targets: txt,
+      alpha: 0,
+      duration: 800,
+      delay: 600,
+      onComplete: () => txt.destroy(),
+    });
   }
 
   shutdown() {
