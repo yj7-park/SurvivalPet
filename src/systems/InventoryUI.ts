@@ -4,6 +4,8 @@ import { SurvivalStats } from './SurvivalStats';
 import { CombatSystem } from './CombatSystem';
 import { WEAPONS, calcDamage, calcCooldownMs } from '../config/weapons';
 import { CharacterStats } from '../entities/CharacterStats';
+import { EquipmentSystem } from './EquipmentSystem';
+import { ARMOR_DEFS, SHIELD_DEFS } from '../config/equipment';
 
 const STACK_LIMITS: Record<string, number> = {
   item_wood: 99,
@@ -20,6 +22,11 @@ const STACK_LIMITS: Record<string, number> = {
   item_sword_stone: 1,
   item_fishing_rod: 1,
   item_torch: 10,
+  item_armor_hide: 1,
+  item_armor_wood: 1,
+  item_armor_stone: 1,
+  item_shield_wood: 1,
+  item_shield_stone: 1,
 };
 const DEFAULT_STACK = 99;
 
@@ -38,10 +45,17 @@ const ITEM_NAMES: Record<string, string> = {
   item_sword_stone:     '석재칼',
   item_fishing_rod:     '낚싯대',
   item_torch:           '횃불',
+  item_armor_hide:      '가죽 갑옷',
+  item_armor_wood:      '목재 갑옷',
+  item_armor_stone:     '석재 갑옷',
+  item_shield_wood:     '목재 방패',
+  item_shield_stone:    '석재 방패',
 };
 
 const WEAPON_ITEM_IDS = new Set(['item_bow', 'item_sword_wood', 'item_sword_stone']);
 const FOOD_ITEM_IDS   = new Set(['item_cooked_meat', 'item_cooked_fish', 'item_raw_meat', 'item_fish']);
+const ARMOR_ITEM_IDS  = new Set(Object.keys(ARMOR_DEFS));
+const SHIELD_ITEM_IDS = new Set(Object.keys(SHIELD_DEFS));
 
 const FOOD_RESTORE: Record<string, number> = {
   item_fish:        15,
@@ -58,6 +72,8 @@ export class InventoryUI {
   private hudWeaponLabel: Phaser.GameObjects.Text;
   private hudWeaponName: Phaser.GameObjects.Text;
 
+  private equipmentSystem: EquipmentSystem | null = null;
+
   constructor(
     private scene: Phaser.Scene,
     private inventory: Inventory,
@@ -65,7 +81,9 @@ export class InventoryUI {
     private combat: CombatSystem,
     private charStats: CharacterStats,
     private getNearTable: (() => boolean) | null = null,
+    equipmentSystem: EquipmentSystem | null = null,
   ) {
+    this.equipmentSystem = equipmentSystem;
     const W = scene.scale.width;
     const H = scene.scale.height;
 
@@ -114,6 +132,10 @@ export class InventoryUI {
   equipWeapon(id: string | null): void {
     this.equippedWeaponId = id;
     this.combat.equipWeapon(id);
+    // Auto-unequip shield if two-handed weapon equipped
+    if (this.equipmentSystem) {
+      this.equipmentSystem.handleWeaponEquip(id, this.inventory);
+    }
     this.updateWeaponHUD();
     if (this.panel) this.refreshPanel();
   }
@@ -175,6 +197,8 @@ export class InventoryUI {
       const isEquipped  = key && WEAPON_ITEM_IDS.has(key) && this.equippedWeaponId === this.weaponIdFromItem(key);
       const isWeapon    = key && WEAPON_ITEM_IDS.has(key);
       const isFood      = key && FOOD_ITEM_IDS.has(key);
+      const isArmor     = key && ARMOR_ITEM_IDS.has(key);
+      const isShield    = key && SHIELD_ITEM_IDS.has(key);
 
       slot.style.cssText = `
         width:56px; height:56px; background:${isEquipped ? '#2a4020' : '#1a2030'};
@@ -209,6 +233,8 @@ export class InventoryUI {
         slot.addEventListener('mouseenter', () => {
           if (isWeapon) {
             tooltip.textContent = isEquipped ? '클릭: 장착 해제' : '클릭: 장착';
+          } else if (isArmor || isShield) {
+            tooltip.textContent = '우클릭: 장착';
           } else if (isFood) {
             const restore = FOOD_RESTORE[key];
             if (restore) {
@@ -231,6 +257,13 @@ export class InventoryUI {
             this.handleFoodClick(key, tooltip);
           }
         });
+
+        if ((isArmor || isShield) && this.equipmentSystem) {
+          slot.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            this.handleEquipmentRightClick(key, isShield ? 'shield' : 'armor', tooltip);
+          });
+        }
       }
 
       container.appendChild(slot);
@@ -244,6 +277,21 @@ export class InventoryUI {
       this.equipWeapon(null);
     } else {
       this.equipWeapon(weapId);
+    }
+  }
+
+  private handleEquipmentRightClick(
+    itemKey: string,
+    slot: 'armor' | 'shield',
+    tooltip: HTMLDivElement,
+  ): void {
+    if (!this.equipmentSystem) return;
+    const result = this.equipmentSystem.equip(slot, itemKey, this.inventory, this.equippedWeaponId);
+    if (result.ok) {
+      tooltip.textContent = '장착 완료';
+      if (this.panel) this.refreshPanel();
+    } else {
+      tooltip.textContent = result.reason;
     }
   }
 
@@ -311,6 +359,11 @@ export class InventoryUI {
       item_sword_stone:     '⚔',
       item_fishing_rod:     '🎣',
       item_torch:           '🔥',
+      item_armor_hide:      '🦺',
+      item_armor_wood:      '🪵',
+      item_armor_stone:     '🧱',
+      item_shield_wood:     '🛡',
+      item_shield_stone:    '🛡',
     };
     return map[key] ?? '📦';
   }

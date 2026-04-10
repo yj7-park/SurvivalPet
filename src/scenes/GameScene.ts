@@ -24,6 +24,7 @@ import { InvasionSystem } from '../systems/InvasionSystem';
 import { COOKING_RECIPES, CRAFTING_RECIPES, Recipe } from '../config/recipes';
 import { ProficiencySystem, ProficiencyType, PROF_NAMES } from '../systems/ProficiencySystem';
 import { ResearchSystem, RESEARCH_DEFS } from '../systems/ResearchSystem';
+import { EquipmentSystem } from '../systems/EquipmentSystem';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -79,6 +80,7 @@ export class GameScene extends Phaser.Scene {
   // 숙련도 & 연구
   proficiency!: ProficiencySystem;
   research!: ResearchSystem;
+  equipmentSystem!: EquipmentSystem;
   private workbenchPos: { wx: number; wy: number } | null = null;
 
   // 요리 진행 상태
@@ -192,6 +194,9 @@ export class GameScene extends Phaser.Scene {
       this, this.player, this.charStats, this.survival, this.inventory, this.animalMgr, playerRng2,
     );
     this.combat.setEffectSystem(this.effects);
+
+    this.equipmentSystem = new EquipmentSystem();
+    this.combat.setEquipmentSystem(this.equipmentSystem, this.proficiency);
 
     // 전투 종료 시 큐 진행
     this.combat.setCombatEndCallback(() => {
@@ -1097,6 +1102,7 @@ export class GameScene extends Phaser.Scene {
         <button class="wb-tab" data-tab="weapon" style="flex:1;padding:4px;background:#2a3a2a;color:#aaffaa;border:1px solid #446644;border-radius:3px;cursor:pointer;font:10px monospace">무기</button>
         <button class="wb-tab" data-tab="material" style="flex:1;padding:4px;background:#1a2030;color:#888;border:1px solid #334;border-radius:3px;cursor:pointer;font:10px monospace">재료</button>
         <button class="wb-tab" data-tab="tool" style="flex:1;padding:4px;background:#1a2030;color:#888;border:1px solid #334;border-radius:3px;cursor:pointer;font:10px monospace">도구</button>
+        <button class="wb-tab" data-tab="armor" style="flex:1;padding:4px;background:#1a2030;color:#888;border:1px solid #334;border-radius:3px;cursor:pointer;font:10px monospace">방어구</button>
         <button class="wb-tab" data-tab="research" style="flex:1;padding:4px;background:#1a2030;color:#888;border:1px solid #334;border-radius:3px;cursor:pointer;font:10px monospace">연구</button>
       </div>
       <div id="wb-items" style="display:flex;flex-direction:column;gap:6px"></div>

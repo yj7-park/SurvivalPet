@@ -767,6 +767,101 @@ function drawArrow(): HTMLCanvasElement {
   return c;
 }
 
+// ── Armor & Shield sprites ───────────────────────────────────────────────────
+
+function drawArmor(mat: 'hide' | 'wood' | 'stone'): HTMLCanvasElement {
+  const c = makeCanvas(); const ctx = c.getContext('2d')!;
+  ctx.clearRect(0, 0, 32, 32);
+
+  const colors = {
+    hide:  { main: '#8b5a2b', mid: '#b07040', light: '#d09050', dark: '#5a2a10' },
+    wood:  { main: '#a0622a', mid: '#c8884a', light: '#e0aa6a', dark: '#6b3f1a' },
+    stone: { main: '#606870', mid: '#8090a0', light: '#b0c0d0', dark: '#303840' },
+  };
+  const p = colors[mat];
+
+  // Body/torso shape
+  ctx.fillStyle = p.main;
+  ctx.fillRect(8, 8, 16, 18);
+
+  // Shoulder pads
+  ctx.fillStyle = p.mid;
+  ctx.fillRect(5, 8, 6, 8);
+  ctx.fillRect(21, 8, 6, 8);
+
+  // Chest highlight
+  ctx.fillStyle = p.light;
+  ctx.fillRect(10, 10, 12, 5);
+
+  // Center line
+  ctx.fillStyle = p.dark;
+  ctx.fillRect(15, 10, 2, 14);
+
+  // Belt
+  ctx.fillStyle = p.dark;
+  ctx.fillRect(8, 22, 16, 3);
+  ctx.fillStyle = p.light;
+  ctx.fillRect(14, 22, 4, 3);
+
+  // Shadow bottom
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.fillRect(8, 24, 16, 2);
+
+  return c;
+}
+
+function drawShieldItem(mat: 'wood' | 'stone'): HTMLCanvasElement {
+  const c = makeCanvas(); const ctx = c.getContext('2d')!;
+  ctx.clearRect(0, 0, 32, 32);
+
+  const colors = {
+    wood:  { main: '#8b5a2b', mid: '#c8884a', light: '#e0aa6a', dark: '#5a2a10', boss: '#e0a020' },
+    stone: { main: '#505860', mid: '#7080a0', light: '#a0b8d0', dark: '#303848', boss: '#a0c0e0' },
+  };
+  const p = colors[mat];
+
+  // Shield outline (kite shield shape)
+  ctx.fillStyle = p.dark;
+  ctx.beginPath();
+  ctx.moveTo(16, 4);
+  ctx.lineTo(27, 10);
+  ctx.lineTo(27, 22);
+  ctx.lineTo(16, 29);
+  ctx.lineTo(5, 22);
+  ctx.lineTo(5, 10);
+  ctx.closePath();
+  ctx.fill();
+
+  // Shield body
+  ctx.fillStyle = p.main;
+  ctx.beginPath();
+  ctx.moveTo(16, 6);
+  ctx.lineTo(25, 11);
+  ctx.lineTo(25, 21);
+  ctx.lineTo(16, 27);
+  ctx.lineTo(7, 21);
+  ctx.lineTo(7, 11);
+  ctx.closePath();
+  ctx.fill();
+
+  // Quadrant lines
+  ctx.fillStyle = p.dark;
+  ctx.fillRect(15, 6, 2, 21);
+  ctx.fillRect(7, 15, 18, 2);
+
+  // Boss center
+  ctx.fillStyle = p.boss;
+  ctx.beginPath();
+  ctx.arc(16, 16, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = p.light;
+  ctx.beginPath();
+  ctx.arc(16, 16, 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  return c;
+}
+
 // ── Animal sprites ────────────────────────────────────────────────────────────
 
 function drawDeer(state: 'idle' | 'walk'): HTMLCanvasElement {
@@ -965,4 +1060,11 @@ export function registerTextures(scene: Phaser.Scene): void {
   scene.textures.addCanvas('item_sword_wood',    drawSword('wood'));
   scene.textures.addCanvas('item_sword_stone',   drawSword('stone'));
   scene.textures.addCanvas('projectile_arrow',   drawArrow());
+
+  // Armor & shields
+  scene.textures.addCanvas('item_armor_hide',    drawArmor('hide'));
+  scene.textures.addCanvas('item_armor_wood',    drawArmor('wood'));
+  scene.textures.addCanvas('item_armor_stone',   drawArmor('stone'));
+  scene.textures.addCanvas('item_shield_wood',   drawShieldItem('wood'));
+  scene.textures.addCanvas('item_shield_stone',  drawShieldItem('stone'));
 }

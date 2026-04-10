@@ -1,7 +1,7 @@
 export interface Recipe {
   id: string;
   label: string;
-  category: 'weapon' | 'material' | 'tool' | 'cooking';
+  category: 'weapon' | 'material' | 'tool' | 'cooking' | 'armor';
   inputs: { itemId: string; amount: number }[];
   output: { itemId: string; amount: number };
   timeMultiplier: number; // applied to cookTime or craftTime
@@ -78,6 +78,59 @@ export const CRAFTING_RECIPES: Recipe[] = [
     inputs: [{ itemId: 'item_stone', amount: 10 }],
     output: { itemId: 'item_processed_stone', amount: 5 },
     timeMultiplier: 1,
+    unlock: { proficiencyLevel: 4 },
+  },
+  // ── 방어구
+  {
+    id: 'craft_armor_hide',
+    label: '🦺 가죽 갑옷',
+    category: 'armor',
+    inputs: [{ itemId: 'item_hide', amount: 4 }],
+    output: { itemId: 'item_armor_hide', amount: 1 },
+    timeMultiplier: 1.5,
+    unlock: { proficiencyLevel: 2 },
+  },
+  {
+    id: 'craft_armor_wood',
+    label: '🪵 목재 갑옷',
+    category: 'armor',
+    inputs: [{ itemId: 'item_wood', amount: 8 }],
+    output: { itemId: 'item_armor_wood', amount: 1 },
+    timeMultiplier: 2,
+    unlock: { proficiencyLevel: 3 },
+  },
+  {
+    id: 'craft_armor_stone',
+    label: '🧱 석재 갑옷',
+    category: 'armor',
+    inputs: [
+      { itemId: 'item_processed_stone', amount: 6 },
+      { itemId: 'item_hide', amount: 2 },
+    ],
+    output: { itemId: 'item_armor_stone', amount: 1 },
+    timeMultiplier: 3,
+    unlock: { proficiencyLevel: 5 },
+  },
+  // ── 방패
+  {
+    id: 'craft_shield_wood',
+    label: '🛡 목재 방패',
+    category: 'armor',
+    inputs: [{ itemId: 'item_wood', amount: 5 }],
+    output: { itemId: 'item_shield_wood', amount: 1 },
+    timeMultiplier: 1.5,
+    unlock: { proficiencyLevel: 2 },
+  },
+  {
+    id: 'craft_shield_stone',
+    label: '🛡 석재 방패',
+    category: 'armor',
+    inputs: [
+      { itemId: 'item_processed_stone', amount: 4 },
+      { itemId: 'item_wood', amount: 2 },
+    ],
+    output: { itemId: 'item_shield_stone', amount: 1 },
+    timeMultiplier: 2.5,
     unlock: { proficiencyLevel: 4 },
   },
 ];

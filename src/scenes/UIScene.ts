@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { InventoryUI } from '../systems/InventoryUI';
+import { EquipmentPanel } from '../systems/EquipmentPanel';
 
 // Runtime reference only — no import to avoid circular dep
 type GameSceneRef = {
@@ -9,6 +10,8 @@ type GameSceneRef = {
   inventory: import('../systems/Inventory').Inventory;
   combat: import('../systems/CombatSystem').CombatSystem;
   weather: import('../systems/WeatherSystem').WeatherSystem;
+  proficiency: import('../systems/ProficiencySystem').ProficiencySystem;
+  equipmentSystem: import('../systems/EquipmentSystem').EquipmentSystem;
   seed: string;
   mapX: number;
   mapY: number;
@@ -17,6 +20,7 @@ type GameSceneRef = {
 
 export class UIScene extends Phaser.Scene {
   public inventoryUI!: InventoryUI;
+  private equipmentPanel!: EquipmentPanel;
 
   private nightOverlay!: Phaser.GameObjects.Rectangle;
   private frenzyOverlay!: Phaser.GameObjects.Rectangle;
@@ -94,10 +98,20 @@ export class UIScene extends Phaser.Scene {
     this.inventoryUI = new InventoryUI(
       this, gs.inventory, gs.survival, gs.combat, gs.charStats,
       () => gs.isNearTable(),
+      gs.equipmentSystem,
+    );
+
+    this.equipmentPanel = new EquipmentPanel(
+      gs.equipmentSystem,
+      gs.inventory,
+      () => this.inventoryUI.getEquippedWeaponId(),
+      () => gs.proficiency.getLevel('combat'),
     );
 
     // V키: 인벤토리 토글
     this.input.keyboard!.on('keydown-V', () => this.inventoryUI.toggle());
+    // E키: 장비 패널 토글
+    this.input.keyboard!.on('keydown-E', () => this.equipmentPanel.toggle());
 
     // 피격 플래시 콜백 등록
     gs.combat.setHitFlashCallback(() => {
@@ -161,9 +175,11 @@ export class UIScene extends Phaser.Scene {
 
     // 인벤토리 UI 업데이트 (무기 HUD 포함)
     this.inventoryUI.update();
+    this.equipmentPanel.update();
   }
 
   shutdown() {
     this.inventoryUI?.destroy();
+    this.equipmentPanel?.destroy();
   }
 }

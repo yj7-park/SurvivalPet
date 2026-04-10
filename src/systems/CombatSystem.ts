@@ -9,6 +9,8 @@ import { SeededRandom } from '../utils/seedRandom';
 import { WeaponConfig, calcDamage, calcCooldownMs, calcDodgeChance, WEAPONS } from '../config/weapons';
 import { TILE_SIZE } from '../world/MapGenerator';
 import { EffectSystem } from './EffectSystem';
+import { EquipmentSystem } from './EquipmentSystem';
+import { ProficiencySystem } from './ProficiencySystem';
 
 export class CombatSystem {
   private lockedTarget: Animal | null = null;
@@ -22,6 +24,8 @@ export class CombatSystem {
   private combatEndCallback: (() => void) | null = null;
   private onKillCallback: (() => void) | null = null;
   private effects: EffectSystem | null = null;
+  private equipmentSystem: EquipmentSystem | null = null;
+  private proficiency: ProficiencySystem | null = null;
 
   constructor(
     private scene: Phaser.Scene,
@@ -74,6 +78,10 @@ export class CombatSystem {
   setCombatEndCallback(cb: () => void): void { this.combatEndCallback = cb; }
   setOnKillCallback(cb: () => void): void { this.onKillCallback = cb; }
   setEffectSystem(effects: EffectSystem): void { this.effects = effects; }
+  setEquipmentSystem(equip: EquipmentSystem, prof: ProficiencySystem): void {
+    this.equipmentSystem = equip;
+    this.proficiency = prof;
+  }
 
   /** Called when player takes damage from an animal */
   onPlayerHit(dmg: number): void {
@@ -83,7 +91,18 @@ export class CombatSystem {
       this.spawnFloatText(this.player.sprite.x, this.player.sprite.y - 20, 'DODGE!', '#88ddff');
       return;
     }
-    const actual = Math.max(1, Math.floor(dmg - this.stats.con * 0.5));
+    // Block check (requires shield equipped)
+    if (this.equipmentSystem) {
+      const combatLvl = this.proficiency?.getLevel('combat') ?? 1;
+      const blockChance = this.equipmentSystem.totalBlockChance(combatLvl);
+      if (blockChance > 0 && this.rng.next() < blockChance) {
+        this.spawnBlockText(this.player.sprite.x, this.player.sprite.y - 20);
+        return;
+      }
+    }
+    // Defense reduction (armor + shield + con)
+    const defense = this.equipmentSystem?.totalDefense ?? 0;
+    const actual  = Math.max(1, Math.floor(dmg - this.stats.con * 0.5 - defense));
     this.survival.hp = Math.max(0, this.survival.hp - actual);
     this.spawnFloatText(this.player.sprite.x, this.player.sprite.y - 20, `-${actual}`, '#ff4444');
     this.hitFlashCallback?.();
@@ -224,6 +243,18 @@ export class CombatSystem {
       fontStyle: 'bold',
     }).setDepth(20).setOrigin(0.5);
     this.damageTexts.push({ text: t, vy: -40, life: 900 });
+  }
+
+  private spawnBlockText(x: number, y: number): void {
+    const t = this.scene.add.text(x, y, '🛡 막기!', {
+      fontSize: '14px',
+      color: '#ffffff',
+      fontFamily: 'monospace',
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 2,
+    }).setDepth(20).setOrigin(0.5);
+    this.damageTexts.push({ text: t, vy: -40, life: 800 });
   }
 
   private spawnHitFlash(x: number, y: number): void {
