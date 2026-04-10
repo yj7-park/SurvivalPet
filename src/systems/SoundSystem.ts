@@ -10,7 +10,7 @@ export type SoundId =
   | 'btn_click' | 'inv_open' | 'item_pickup' | 'levelup'
   | 'build_done' | 'build_destroy' | 'frenzy_start' | 'frenzy_end'
   | 'sleep_start' | 'wake_up' | 'alert'
-  | 'door_open' | 'door_close';
+  | 'door_open' | 'door_close' | 'thunder';
 
 export type GameSituation = 'normal' | 'invasion' | 'frenzy';
 
@@ -208,5 +208,6 @@ export class SoundSystem {
     this.buffers.set('wake_up',      g.createTone(880, 0.3, 'sine', 0.05, 0.05, 0.7, 0.15));
     this.buffers.set('door_open',    g.createSweep(300, 500, 0.3, 'sine', 0.01, 0.15));
     this.buffers.set('door_close',   g.createSweep(500, 250, 0.3, 'sine', 0.01, 0.15));
+    this.buffers.set('thunder',      g.createNoise(0.9, 'pink', 0.001, 0.05, 0.8, 0.6));
   }
 }

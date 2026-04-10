@@ -1969,6 +1969,55 @@ function drawFoodItem(type: 'bread' | 'potato_soup' | 'carrot_stew' | 'pumpkin_p
   return c;
 }
 
+// ── Weather particle textures ─────────────────────────────────────────────
+
+function drawRaindrop(): HTMLCanvasElement {
+  const c = makeCanvas(1, 6);
+  const ctx = c.getContext('2d')!;
+  const grad = ctx.createLinearGradient(0, 0, 0, 6);
+  grad.addColorStop(0, 'rgba(180,210,255,0.0)');
+  grad.addColorStop(1, 'rgba(180,210,255,0.8)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 1, 6);
+  return c;
+}
+
+function drawSnowflake(): HTMLCanvasElement {
+  const c = makeCanvas(4, 4);
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = 'rgba(220,235,255,0.9)';
+  ctx.beginPath();
+  ctx.moveTo(2, 0);
+  ctx.lineTo(4, 2);
+  ctx.lineTo(2, 4);
+  ctx.lineTo(0, 2);
+  ctx.closePath();
+  ctx.fill();
+  return c;
+}
+
+function drawFogCloud(): HTMLCanvasElement {
+  const c = makeCanvas(256, 128);
+  const ctx = c.getContext('2d')!;
+  const grad = ctx.createRadialGradient(128, 64, 0, 128, 64, 128);
+  grad.addColorStop(0,   'rgba(220,225,230,0.38)');
+  grad.addColorStop(0.5, 'rgba(210,218,225,0.18)');
+  grad.addColorStop(1,   'rgba(200,210,220,0.00)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 256, 128);
+  return c;
+}
+
+function drawFallLeaf(): HTMLCanvasElement {
+  const c = makeCanvas(6, 5);
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = 'rgba(200,96,16,0.9)';
+  ctx.beginPath();
+  ctx.ellipse(3, 2.5, 3, 2, 0.3, 0, Math.PI * 2);
+  ctx.fill();
+  return c;
+}
+
 export function registerTextures(scene: Phaser.Scene): void {
   if (scene.textures.exists('tile_dirt')) return;
 
@@ -1987,6 +2036,12 @@ export function registerTextures(scene: Phaser.Scene): void {
 
   // Fishing bobber (8×8)
   scene.textures.addCanvas('fx_bobber', drawFishingBobber());
+
+  // Weather particle textures
+  scene.textures.addCanvas('fx_raindrop',  drawRaindrop());
+  scene.textures.addCanvas('fx_snowflake', drawSnowflake());
+  scene.textures.addCanvas('fx_fog_cloud', drawFogCloud());
+  scene.textures.addCanvas('fx_leaf_fall', drawFallLeaf());
 
   // Character sprites — 3 appearance palettes (static textures for backward compat)
   for (let i = 0; i < 3; i++) {

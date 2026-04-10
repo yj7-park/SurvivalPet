@@ -330,6 +330,10 @@ export class GameScene extends Phaser.Scene {
     this.weather = new WeatherSystem(this, this.gameTime, this.seed);
 
     this.mapGenerator = new MapGenerator(this.seed);
+    this.tileRenderer = new TileRenderer(this);
+    this.treeRenderer = new TreeRenderer(this);
+    this.objectRenderer = new ObjectRenderer(this);
+
     const startMx = this.mapX, startMy = this.mapY;
     const firstMap = this.mapGenerator.generateMap(startMx, startMy);
     this.currentTiles = firstMap.tiles;
@@ -342,9 +346,6 @@ export class GameScene extends Phaser.Scene {
     this.player.setTiles(this.currentTiles);
     this.player.sprite.setDepth(this.player.sprite.y);
     this.charRenderer = new CharacterRenderer(this, this.player.sprite, this.pendingAppearance);
-    this.tileRenderer = new TileRenderer(this);
-    this.treeRenderer = new TreeRenderer(this);
-    this.objectRenderer = new ObjectRenderer(this);
     this.transitionSystem = new TransitionSystem(this, this.scale.width, this.scale.height);
     this.transitionSystem.playIntro();
     this.starLayer = new StarLayer(this, this.seed);
@@ -444,6 +445,7 @@ export class GameScene extends Phaser.Scene {
         this.soundSystem.setSFXVolume(savedSettings.sfxVolume ?? 0.8);
         this.soundSystem.setBGMVolume(savedSettings.bgmVolume ?? 0.4);
         this.soundSystem.updateBGMByGameTime(this.gameTime, 'normal');
+        this.weather.initParticles(this.soundSystem);
       });
       document.removeEventListener('pointerdown', initSound);
     };
@@ -1654,7 +1656,11 @@ export class GameScene extends Phaser.Scene {
       if (ptx !== this.lastIndoorTileX || pty !== this.lastIndoorTileY) {
         this.lastIndoorTileX = ptx;
         this.lastIndoorTileY = pty;
+        const wasIndoor = this.playerIsIndoor;
         this.playerIsIndoor = this.roofSystem.isCovered(ptx, pty);
+        if (wasIndoor !== this.playerIsIndoor) {
+          this.weather.setIndoor(this.playerIsIndoor);
+        }
       }
     }
 
@@ -1948,6 +1954,7 @@ export class GameScene extends Phaser.Scene {
     this.transitionSystem?.destroy();
     this.seasonCard?.destroy();
     this.starLayer?.destroy();
+    this.weather?.destroy();
     this.charRenderer?.destroy();
     this.logPanel?.close();
     this.notifySystem?.destroy();

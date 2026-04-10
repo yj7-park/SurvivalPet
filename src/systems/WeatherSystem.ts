@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import { GameTime, Season } from './GameTime';
 import { WeatherEffectSystem, SEASON_FISH_BONUS, SEASON_INVASION_MULT } from './WeatherEffectSystem';
+import { WeatherParticleSystem } from './WeatherParticleSystem';
+import { SoundSystem } from './SoundSystem';
 
 export type WeatherType = 'clear' | 'cloudy' | 'rain' | 'fog' | 'leaves' | 'snow' | 'storm' | 'blizzard';
 
@@ -32,6 +34,7 @@ export class WeatherSystem {
   private currentWeather: WeatherType = 'clear';
   private lastDay = -1;
   readonly effectSystem = new WeatherEffectSystem();
+  particleSystem: WeatherParticleSystem | null = null;
 
   constructor(
     private scene: Phaser.Scene,
@@ -39,6 +42,11 @@ export class WeatherSystem {
     private seed: string,
   ) {
     this.updateWeatherForDay();
+  }
+
+  initParticles(sound: SoundSystem): void {
+    this.particleSystem = new WeatherParticleSystem(this.scene, sound);
+    this.particleSystem.setWeather(this.currentWeather, 0);
   }
 
   private updateWeatherForDay(): void {
@@ -59,9 +67,13 @@ export class WeatherSystem {
       }
     }
 
+    const prev = this.currentWeather;
     this.currentWeather = selected;
     this.lastDay = day;
     this.effectSystem.onWeatherChanged(selected, season);
+    if (prev !== selected) {
+      this.particleSystem?.setWeather(selected, 3000);
+    }
   }
 
   getWeather(): WeatherType { return this.currentWeather; }
@@ -77,10 +89,19 @@ export class WeatherSystem {
     return SEASON_INVASION_MULT[this.gameTime.season] ?? 1.0;
   }
 
+  setIndoor(indoor: boolean): void {
+    this.particleSystem?.setIndoor(indoor);
+  }
+
   update(delta: number): void {
     if (this.gameTime.day !== this.lastDay) {
       this.updateWeatherForDay();
     }
     this.effectSystem.update(delta);
+    this.particleSystem?.update(delta);
+  }
+
+  destroy(): void {
+    this.particleSystem?.destroy();
   }
 }
