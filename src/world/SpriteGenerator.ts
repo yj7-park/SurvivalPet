@@ -1252,6 +1252,66 @@ function drawTorchPlaced(dim: boolean): HTMLCanvasElement {
   return c;
 }
 
+function drawCampfire(state: 'large' | 'medium' | 'small' | 'ash'): HTMLCanvasElement {
+  const c = makeCanvas();
+  const ctx = c.getContext('2d')!;
+  const cx = TILE / 2, cy = TILE / 2 + 4;
+
+  if (state === 'ash') {
+    // Gray ash pile
+    ctx.fillStyle = '#555555';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 2, 10, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#888888';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 2, 6, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Log remnants
+    ctx.fillStyle = '#444444';
+    ctx.fillRect(cx - 8, cy, 6, 3);
+    ctx.fillRect(cx + 2, cy, 6, 3);
+    return c;
+  }
+
+  // Log base
+  ctx.fillStyle = '#7a4a20';
+  ctx.fillRect(cx - 9, cy + 2, 8, 4);
+  ctx.fillRect(cx + 1, cy + 2, 8, 4);
+
+  // Ember base
+  ctx.fillStyle = '#ff6600';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + 3, 8, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (state === 'large') {
+    // Large bright flame
+    ctx.fillStyle = '#ff4400';
+    ctx.beginPath(); ctx.ellipse(cx, cy - 2, 7, 10, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ff8800';
+    ctx.beginPath(); ctx.ellipse(cx, cy - 4, 5, 8, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffcc00';
+    ctx.beginPath(); ctx.ellipse(cx, cy - 6, 3, 5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffff88';
+    ctx.beginPath(); ctx.ellipse(cx, cy - 8, 2, 3, 0, 0, Math.PI * 2); ctx.fill();
+  } else if (state === 'medium') {
+    ctx.fillStyle = '#ff5500';
+    ctx.beginPath(); ctx.ellipse(cx, cy, 5, 7, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ff9900';
+    ctx.beginPath(); ctx.ellipse(cx, cy - 2, 4, 5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffcc44';
+    ctx.beginPath(); ctx.ellipse(cx, cy - 4, 2, 3, 0, 0, Math.PI * 2); ctx.fill();
+  } else {
+    // small — dim flickering flame
+    ctx.fillStyle = '#cc4400';
+    ctx.beginPath(); ctx.ellipse(cx, cy + 1, 4, 5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ff7700';
+    ctx.beginPath(); ctx.ellipse(cx, cy - 1, 2, 3, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  return c;
+}
+
 export function registerTextures(scene: Phaser.Scene): void {
   if (scene.textures.exists('tile_dirt')) return;
 
@@ -1357,4 +1417,10 @@ export function registerTextures(scene: Phaser.Scene): void {
   scene.textures.addCanvas('item_torch',        drawTorchItem());
   scene.textures.addCanvas('torch_placed',      drawTorchPlaced(false));
   scene.textures.addCanvas('torch_placed_dim',  drawTorchPlaced(true));
+
+  // Campfire sprites
+  scene.textures.addCanvas('campfire_large',  drawCampfire('large'));
+  scene.textures.addCanvas('campfire_medium', drawCampfire('medium'));
+  scene.textures.addCanvas('campfire_small',  drawCampfire('small'));
+  scene.textures.addCanvas('campfire_ash',    drawCampfire('ash'));
 }

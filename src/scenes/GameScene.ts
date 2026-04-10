@@ -30,7 +30,7 @@ import { ProficiencySystem, ProficiencyType, PROF_NAMES } from '../systems/Profi
 import { ResearchSystem, RESEARCH_DEFS } from '../systems/ResearchSystem';
 import { EquipmentSystem } from '../systems/EquipmentSystem';
 import { DropSystem } from '../systems/DropSystem';
-import { SaveSystem, SaveData } from '../systems/SaveSystem';
+import { SaveSystem, SaveData, CampfireSaveEntry } from '../systems/SaveSystem';
 import { PauseMenu } from '../ui/PauseMenu';
 import { ActionSystem } from '../systems/ActionSystem';
 import { DurabilitySystem } from '../systems/DurabilitySystem';
@@ -52,6 +52,8 @@ import { ChatLog } from '../ui/ChatLog';
 import { ChatInput } from '../ui/ChatInput';
 import { ChatBubbleManager } from '../ui/ChatBubble';
 import { SEASON_TREE_DENSITY } from '../systems/WeatherEffectSystem';
+import { CampfireSystem } from '../systems/CampfireSystem';
+import { CampfirePanel } from '../ui/CampfirePanel';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -123,6 +125,8 @@ export class GameScene extends Phaser.Scene {
   private cookingKitchenPos: { wx: number; wy: number } | null = null;
   private cookingStartTime = 0;
   private cookingDuration = 0;
+  // 모닥불 요리 진행 상태
+  private campfireCookingTimer: Phaser.Time.TimerEvent | null = null;
 
   // Shelf storage
   private shelfStorages = new Map<string, ShelfStorage>();
@@ -212,6 +216,11 @@ export class GameScene extends Phaser.Scene {
   // 조명 시스템
   lightSystem!: LightSystem;
   private torchWarnedOnce = false;
+
+  // 모닥불 시스템
+  private campfireSystem!: CampfireSystem;
+  private campfirePanel!: CampfirePanel;
+  private campfireWarmthNotified = false;
 
   // 날씨 효과
   private lastSeasonForWeather = '';
@@ -308,6 +317,29 @@ export class GameScene extends Phaser.Scene {
       this.showNotificationPopup('횃불이 곧 꺼집니다!', '#ffaa44');
       this.torchWarnedOnce = true;
     });
+
+    // 모닥불 시스템 초기화
+    this.campfireSystem = new CampfireSystem(this);
+    this.campfireSystem.onExtinguished((id) => {
+      if (this.campfirePanel.getActiveCampfireId() === id) this.campfirePanel.close();
+      this.showNotificationPopup('빗물에 모닥불이 꺼졌습니다', '#aaddff');
+      if (this.isMultiplayer) this.multiplayerSys.uploadCampfireLit(id, false);
+    });
+    this.campfireSystem.onFuelEmpty((id) => {
+      if (this.campfirePanel.getActiveCampfireId() === id) this.campfirePanel.close();
+      if (this.isMultiplayer) this.multiplayerSys.uploadCampfireLit(id, false);
+    });
+    this.campfireSystem.onFuelAdded((id, fuelMs) => {
+      if (this.isMultiplayer) this.multiplayerSys.uploadCampfireFuel(id, fuelMs);
+    });
+    this.campfirePanel = new CampfirePanel(
+      this.campfireSystem,
+      this.inventory,
+      () => this.player.sprite.x,
+      () => this.player.sprite.y,
+      (recipe, campfireId) => this.startCampfireCook(recipe, campfireId),
+      (msg, color) => this.showNotificationPopup(msg, color),
+    );
 
     // 맵 전환 시스템
     this.mapTransition = new MapTransitionSystem(
@@ -562,6 +594,33 @@ export class GameScene extends Phaser.Scene {
         return;
       }
 
+      // 모닥불 배치 모드
+      if (this.campfirePlacementMode) {
+        const tx = Math.floor(wx / TILE_SIZE);
+        const ty = Math.floor(wy / TILE_SIZE);
+        if (tx >= 0 && tx < 100 && ty >= 0 && ty < 100 && this.currentTiles[ty]?.[tx] === TileType.Dirt) {
+          const twx = tx * TILE_SIZE + TILE_SIZE / 2;
+          const twy = ty * TILE_SIZE + TILE_SIZE / 2;
+          const dist = Math.hypot(this.player.sprite.x - twx, this.player.sprite.y - twy);
+          if (dist <= BUILD_RANGE * 2) {
+            if (!this.inventory.has('item_wood', 3)) {
+              this.showNotificationPopup('목재 ×3 필요', '#ffaa44');
+            } else {
+              this.inventory.remove('item_wood', 3);
+              const cf = this.campfireSystem.place(tx, ty, this.mapX, this.mapY, this.playerIsIndoor);
+              if (cf) {
+                this.showNotificationPopup('🔥 모닥불 설치', '#ff9933');
+                if (this.isMultiplayer) this.multiplayerSys.uploadCampfireFuel(cf.id, cf.fuelMs);
+              }
+            }
+            this.campfirePlacementMode = false;
+          } else {
+            this.showNotificationPopup('너무 멀습니다 (48px 이내)', '#ffaa44');
+          }
+        }
+        return;
+      }
+
       if (this.buildSystem.activeDef) {
         const tx = Math.floor(wx / TILE_SIZE);
         const ty = Math.floor(wy / TILE_SIZE);
@@ -646,6 +705,21 @@ export class GameScene extends Phaser.Scene {
           this.combat.lockOn(animal);
         }
         return;
+      }
+
+      // Check for campfire click
+      const nearbyCampfire = this.campfireSystem?.getNearby(wx, wy, 48);
+      if (nearbyCampfire) {
+        const dist = Math.hypot(this.player.sprite.x - nearbyCampfire.tileX * TILE_SIZE - TILE_SIZE / 2,
+          this.player.sprite.y - nearbyCampfire.tileY * TILE_SIZE - TILE_SIZE / 2);
+        if (dist <= 64) {
+          if (this.campfirePanel.isOpen()) {
+            this.campfirePanel.close();
+          } else {
+            this.campfirePanel.open(nearbyCampfire.id);
+          }
+          return;
+        }
       }
 
       // Check for structure interaction (workbench, shelf, etc)
@@ -955,6 +1029,14 @@ export class GameScene extends Phaser.Scene {
         this.clearTile(tileX, tileY);
       }
     });
+    this.multiplayerSys.onCampfireChanged((id, data) => {
+      if (data === null) return;
+      const cf = this.campfireSystem.get(id);
+      if (cf) {
+        cf.fuelMs = data.fuelMs;
+        cf.lit = data.lit;
+      }
+    });
 
     await this.multiplayerSys.joinRoom({
       name: this.characterName, skin: this.pendingAppearance,
@@ -1036,7 +1118,11 @@ export class GameScene extends Phaser.Scene {
     this.gameTime.update(effectiveDelta);
     {
       const wm = this.weather.effectSystem.getMultipliers(this.playerIsIndoor);
-      this.survival.update(effectiveDelta, wm.hungerDecay, wm.fatigueDecay);
+      const warmMult = this.campfireSystem?.getWarmthMultiplier(this.player.sprite.x, this.player.sprite.y) ?? 1.0;
+      // Warmth partially cancels weather hunger/fatigue penalty: lerp multiplier toward 1.0
+      const hungerMult = 1 + (wm.hungerDecay - 1) * warmMult;
+      const fatigueMult = 1 + (wm.fatigueDecay - 1) * warmMult;
+      this.survival.update(effectiveDelta, hungerMult, fatigueMult);
     }
     this.hungerSystem.update(effectiveDelta, this.survival, this.charStats);
     this.hpSystem.update(effectiveDelta, this.survival, this.charStats, this.hungerSystem);
@@ -1403,6 +1489,22 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    // 모닥불 시스템 업데이트
+    this.campfireSystem.update(delta, this.weather.getWeather());
+    // 모닥불 광원을 LightSystem에 동기화
+    this.lightSystem.syncCampfireLights(this.campfireSystem.getLightSources());
+
+    // 방한 효과 알림
+    {
+      const isWarm = this.campfireSystem.isWarm(this.player.sprite.x, this.player.sprite.y);
+      if (isWarm && !this.campfireWarmthNotified) {
+        this.campfireWarmthNotified = true;
+        this.showNotificationPopup('🔥 따뜻합니다', '#ff9933');
+      } else if (!isWarm) {
+        this.campfireWarmthNotified = false;
+      }
+    }
+
     // 조명 시스템 업데이트
     const gameHour = this.gameTime.hour + this.gameTime.minute / 60;
     this.lightSystem?.update(
@@ -1556,6 +1658,8 @@ export class GameScene extends Phaser.Scene {
     this.chatInput?.destroy();
     this.chatBubbles?.destroy();
     this.chatLog?.destroy();
+    this.campfirePanel?.close();
+    this.campfireSystem?.destroy();
   }
 
   // ── Map ──────────────────────────────────────────────────
@@ -1593,6 +1697,8 @@ export class GameScene extends Phaser.Scene {
     this.buildSystem?.clearAll();
     this.doorSystem?.clear();
     this.roofSystem?.clear();
+    this.campfireSystem?.clearMap();
+    this.campfirePanel?.close();
     this.lastIndoorTileX = -1;
     this.lastIndoorTileY = -1;
     this.playerIsIndoor = false;
@@ -1779,6 +1885,7 @@ export class GameScene extends Phaser.Scene {
       <div style="display:flex;gap:6px;margin-bottom:8px">
         <button id="bp-wood" style="flex:1;padding:4px;background:#a0622a;color:#fff;border:none;border-radius:3px;cursor:pointer">목재</button>
         <button id="bp-stone" style="flex:1;padding:4px;background:#606060;color:#fff;border:none;border-radius:3px;cursor:pointer">석재</button>
+        <button id="bp-etc" style="flex:1;padding:4px;background:#444;color:#fff;border:none;border-radius:3px;cursor:pointer">기타</button>
       </div>
       <div id="bp-items" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-bottom:8px"></div>
       <div id="bp-info" style="font-size:10px;color:#aaa;min-height:30px"></div>`;
@@ -1794,6 +1901,10 @@ export class GameScene extends Phaser.Scene {
     panel.querySelector('#bp-stone')!.addEventListener('click', () => {
       this.buildSystem.activeMaterial = 'stone';
       this.refreshBuildPanelItems(panel);
+    });
+    panel.querySelector('#bp-etc')!.addEventListener('click', () => {
+      this.buildSystem.activeDef = null;
+      this.refreshBuildEtcItems(panel);
     });
   }
 
@@ -1829,10 +1940,46 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private refreshBuildEtcItems(panel: HTMLDivElement): void {
+    const container = panel.querySelector('#bp-items') as HTMLDivElement;
+    const info = panel.querySelector('#bp-info') as HTMLDivElement;
+    container.innerHTML = '';
+
+    const canAfford = this.inventory.has('item_wood', 3);
+    const atMax = this.campfireSystem.getCount() >= 10;
+    const btn = document.createElement('button');
+    btn.textContent = '🔥 모닥불';
+    btn.style.cssText = `
+      padding:6px 2px; background:${canAfford && !atMax ? '#5a2000' : '#333'};
+      color:${canAfford && !atMax ? '#ffcc88' : '#888'}; border:1px solid #c86400;
+      border-radius:3px; cursor:pointer; font:11px monospace;
+    `;
+    btn.title = '목재 ×3, 즉시 설치';
+    btn.addEventListener('mouseenter', () => {
+      info.textContent = atMax ? '모닥불 최대 10개' : '🔥 모닥불 — 목재 ×3 | 즉시 설치';
+    });
+    btn.addEventListener('mouseleave', () => { info.textContent = ''; });
+    btn.addEventListener('click', () => {
+      if (!canAfford) { this.showNotificationPopup('목재 ×3 필요', '#ffaa44'); return; }
+      if (atMax) { this.showNotificationPopup('모닥불은 최대 10개까지 설치 가능', '#ffaa44'); return; }
+      info.textContent = '🔥 모닥불 설치 위치를 클릭하세요';
+      this.buildSystem.activeDef = null;
+      this.setPendingCampfirePlacement(true);
+    });
+    container.appendChild(btn);
+  }
+
+  private campfirePlacementMode = false;
+
+  private setPendingCampfirePlacement(on: boolean): void {
+    this.campfirePlacementMode = on;
+  }
+
   private closeBuildPanel(): void {
     this.buildPanel?.remove();
     this.buildPanel = null;
     this.buildSystem?.exitBuildMode();
+    this.campfirePlacementMode = false;
   }
 
   private showBuildContextMenu(screenX: number, screenY: number, tileX: number, tileY: number, isPartial: boolean): void {
@@ -2429,6 +2576,11 @@ export class GameScene extends Phaser.Scene {
         knownRecipes: [],
       },
       world: {
+        campfires: this.campfireSystem?.getAll().map<CampfireSaveEntry>(cf => ({
+          id: cf.id, tileX: cf.tileX, tileY: cf.tileY,
+          mapX: cf.mapX, mapY: cf.mapY,
+          fuelMs: cf.fuelMs, lit: cf.lit, isIndoor: cf.isIndoor,
+        })) ?? [],
         buildings: this.buildSystem.getAllStructures().map(s => ({
           type: s.defName,
           tileX: s.tileX,
@@ -2543,6 +2695,19 @@ export class GameScene extends Phaser.Scene {
       }
       if (b.type === 'roof') {
         this.roofSystem.addRoof(b.tileX, b.tileY);
+      }
+    }
+
+    // 모닥불 복원
+    if (saveData.world.campfires) {
+      for (const cf of saveData.world.campfires) {
+        if (cf.mapX === this.mapX && cf.mapY === this.mapY) {
+          const placed = this.campfireSystem.place(cf.tileX, cf.tileY, cf.mapX, cf.mapY, cf.isIndoor);
+          if (placed) {
+            placed.fuelMs = cf.fuelMs;
+            placed.lit = cf.lit;
+          }
+        }
       }
     }
   }
@@ -2810,6 +2975,42 @@ export class GameScene extends Phaser.Scene {
     setTimeout(() => { popup.style.opacity = '0'; setTimeout(() => popup.remove(), 1500); }, 100);
 
     if (this.kitchenPanel) this.refreshKitchenPanel(this.kitchenPanel);
+  }
+
+  private startCampfireCook(recipe: import('../ui/CampfirePanel').CampfireCookRecipe, campfireId: string): void {
+    if (!this.campfireSystem.canCookAt(campfireId, this.player.sprite.x, this.player.sprite.y)) {
+      this.showNotificationPopup('모닥불에서 너무 멀리 있습니다', '#ffaa44');
+      return;
+    }
+    if (!this.inventory.has(recipe.inputItem)) {
+      this.showNotificationPopup('재료가 없습니다', '#ffaa44');
+      return;
+    }
+    if (this.campfireCookingTimer) {
+      this.showNotificationPopup('이미 모닥불 요리 중입니다', '#ffaa44');
+      return;
+    }
+    this.inventory.remove(recipe.inputItem, 1);
+    const cookMs = recipe.cookTimeSec * 1000;
+    this.showNotificationPopup(`🔥 ${recipe.name} 시작 (${recipe.cookTimeSec}초)`, '#ff9933');
+    this.campfireCookingTimer = this.time.delayedCall(cookMs, () => {
+      this.campfireCookingTimer = null;
+      const cf = this.campfireSystem.get(campfireId);
+      if (!cf || !cf.lit) {
+        // 모닥불 꺼짐 → 재료 반환
+        this.inventory.add(recipe.inputItem, 1);
+        this.showNotificationPopup('모닥불이 꺼져 요리가 취소되었습니다', '#ffaa44');
+        return;
+      }
+      if (this.inventory.canAdd(recipe.outputItem)) {
+        this.inventory.add(recipe.outputItem, 1);
+        this.proficiency.addXP('cooking', 12);
+        this.actionSystem.onActionDone('cook', this.survival);
+        this.showNotificationPopup(`✅ ${recipe.name} 완료!`, '#aaffaa');
+      } else {
+        this.showNotificationPopup('⚠ 인벤토리 가득 참', '#ffaa44');
+      }
+    });
   }
 
   private updateKitchenProgressBar(): void {

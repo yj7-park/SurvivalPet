@@ -44,8 +44,20 @@ export interface BuildingSaveEntry {
   durationMs?: number; // for placed torches
 }
 
+export interface CampfireSaveEntry {
+  id: string;
+  tileX: number;
+  tileY: number;
+  mapX: number;
+  mapY: number;
+  fuelMs: number;
+  lit: boolean;
+  isIndoor: boolean;
+}
+
 export interface WorldSaveData {
   buildings: BuildingSaveEntry[];
+  campfires?: CampfireSaveEntry[];
   clearedTrees: Array<{ tileX: number; tileY: number; regrowAt?: number }>;
   clearedRocks: Array<{ tileX: number; tileY: number }>;
   gameTime: {

@@ -55,6 +55,7 @@ export class MultiplayerSystem {
   private onBuildingRemovedCb?: (id: string, mapX: number, mapY: number, tileX: number, tileY: number) => void;
   private onTreeCutCb?: (mapX: number, mapY: number, tileX: number, tileY: number) => void;
   private onRockMinedCb?: (mapX: number, mapY: number, tileX: number, tileY: number) => void;
+  private onCampfireChangedCb?: (id: string, data: { fuelMs: number; lit: boolean } | null) => void;
 
   private localName = '생존자';
   private localSkin = 0;
@@ -231,6 +232,17 @@ export class MultiplayerSystem {
   onBuildingRemoved(cb: (id: string, mapX: number, mapY: number, tileX: number, tileY: number) => void): void { this.onBuildingRemovedCb = cb; }
   onTreeCut(cb: (mapX: number, mapY: number, tileX: number, tileY: number) => void): void { this.onTreeCutCb = cb; }
   onRockMined(cb: (mapX: number, mapY: number, tileX: number, tileY: number) => void): void { this.onRockMinedCb = cb; }
+  onCampfireChanged(cb: (id: string, data: { fuelMs: number; lit: boolean } | null) => void): void { this.onCampfireChangedCb = cb; }
+
+  uploadCampfireFuel(id: string, fuelMs: number): void {
+    if (!this.isEnabled) return;
+    set(ref(this.db, `rooms/${this.seed}/campfires/${id}/fuelMs`), fuelMs);
+  }
+
+  uploadCampfireLit(id: string, lit: boolean): void {
+    if (!this.isEnabled) return;
+    set(ref(this.db, `rooms/${this.seed}/campfires/${id}/lit`), lit);
+  }
   /** 시스템 메시지를 Firebase chat에 직접 전송 */
   sendSystemMessage(text: string): void {
     if (!this.db || !this.seed) return;
@@ -319,6 +331,16 @@ export class MultiplayerSystem {
       applied.rocks.add(id);
       const e = snap.val() as { mapX: number; mapY: number; tileX: number; tileY: number };
       this.onRockMinedCb?.(e.mapX, e.mapY, e.tileX, e.tileY);
+    });
+
+    const campfiresRef = ref(this.db, `rooms/${this.seed}/campfires`);
+    this.worldListenerRefs.push(campfiresRef);
+    onValue(campfiresRef, (snap) => {
+      const data = snap.val() as Record<string, { fuelMs: number; lit: boolean }> | null;
+      if (!data) return;
+      for (const [id, val] of Object.entries(data)) {
+        this.onCampfireChangedCb?.(id, val);
+      }
     });
   }
 

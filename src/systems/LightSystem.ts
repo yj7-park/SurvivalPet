@@ -110,6 +110,21 @@ export class LightSystem {
     );
   }
 
+  /** Sync campfire light sources (prefix 'cf_'): add new, update existing, remove stale */
+  syncCampfireLights(sources: LightSource[]): void {
+    const incoming = new Map(sources.map(l => [l.id, l]));
+    // Remove stale campfire lights
+    for (const id of [...this.lights.keys()]) {
+      if (id.startsWith('cf_') && !incoming.has(id)) {
+        this.lights.delete(id);
+      }
+    }
+    // Add/update
+    for (const l of sources) {
+      this.lights.set(l.id, { ...l });
+    }
+  }
+
   /** Ensure player_body always exists as base light */
   initPlayerBody(x: number, y: number): void {
     this.lights.set('player_body', {
