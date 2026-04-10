@@ -18,8 +18,11 @@ export interface MapData {
   tiles: TileType[][];
 }
 
+const HEIGHT_MAP_CACHE_MAX = 9;
+
 export class MapGenerator {
   private noise: NoiseFunction2D;
+  private heightMapCache = new Map<string, number[][]>();
 
   constructor(private seed: string) {
     // simplex-noise v4는 noise 함수에 prng를 넣어 seed 지원
@@ -27,13 +30,32 @@ export class MapGenerator {
   }
 
   generateMap(mapX: number, mapY: number): MapData {
-    const heightMap = this.generateHeightMap(mapX, mapY);
+    const heightMap = this.getCachedHeightMap(mapX, mapY);
     let tiles = this.classifyTiles(heightMap);
     tiles = this.generateRivers(mapX, mapY, heightMap, tiles);
     tiles = this.smoothWater(tiles);
     tiles = this.smoothRock(tiles);
     tiles = this.placeTrees(mapX, mapY, tiles);
     return { tiles };
+  }
+
+  private getCachedHeightMap(mapX: number, mapY: number): number[][] {
+    const key = `${this.seed}:${mapX},${mapY}`;
+    if (this.heightMapCache.has(key)) {
+      // LRU: move to end by re-inserting
+      const cached = this.heightMapCache.get(key)!;
+      this.heightMapCache.delete(key);
+      this.heightMapCache.set(key, cached);
+      return cached;
+    }
+    const heightMap = this.generateHeightMap(mapX, mapY);
+    if (this.heightMapCache.size >= HEIGHT_MAP_CACHE_MAX) {
+      // evict oldest (first) entry
+      const firstKey = this.heightMapCache.keys().next().value;
+      if (firstKey !== undefined) this.heightMapCache.delete(firstKey);
+    }
+    this.heightMapCache.set(key, heightMap);
+    return heightMap;
   }
 
   private generateHeightMap(mapX: number, mapY: number): number[][] {

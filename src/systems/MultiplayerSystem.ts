@@ -60,6 +60,11 @@ export class MultiplayerSystem {
   private localSkin = 0;
   private worldListenerRefs: DatabaseReference[] = [];
 
+  private lastUploadedPos = { x: 0, y: 0 };
+  private lastUploadedStats = { hp: 0, hunger: 0, fatigue: 0 };
+  private static readonly POSITION_THRESHOLD = 2;
+  private static readonly STAT_THRESHOLD = 2;
+
   constructor(private seed: string, private playerId: string) {}
 
   get isEnabled(): boolean { return this.enabled && this.isJoined; }
@@ -125,7 +130,21 @@ export class MultiplayerSystem {
     if (!this.isEnabled) return;
     const threshold = isMoving ? 100 : 2000;
     if (now - this.lastUpload < threshold) return;
+
+    const PT = MultiplayerSystem.POSITION_THRESHOLD;
+    const ST = MultiplayerSystem.STAT_THRESHOLD;
+    const posUnchanged =
+      Math.abs(x - this.lastUploadedPos.x) < PT &&
+      Math.abs(y - this.lastUploadedPos.y) < PT;
+    const statsUnchanged =
+      Math.abs(hp - this.lastUploadedStats.hp) < ST &&
+      Math.abs(hunger - this.lastUploadedStats.hunger) < ST &&
+      Math.abs(fatigue - this.lastUploadedStats.fatigue) < ST;
+    if (posUnchanged && statsUnchanged && !isMoving) return;
+
     this.lastUpload = now;
+    this.lastUploadedPos = { x, y };
+    this.lastUploadedStats = { hp, hunger, fatigue };
     set(ref(this.db, `rooms/${this.seed}/players/${this.playerId}`), {
       name: this.localName, skin: this.localSkin,
       x, y, mapX, mapY, facing, isMoving,

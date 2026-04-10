@@ -861,6 +861,24 @@ export class GameScene extends Phaser.Scene {
     if (!TutorialSystem.isDone()) {
       this.tutorialSystem.start(this.makeTutorialState());
     }
+
+    // 개발 모드 FPS/메모리 모니터
+    if (import.meta.env.DEV) {
+      const fpsText = this.add.text(8, 8, '', {
+        fontSize: '11px', color: '#00ff00', fontFamily: 'monospace',
+        backgroundColor: '#00000088', padding: { x: 4, y: 2 },
+      }).setScrollFactor(0).setDepth(9999);
+      this.events.on('postupdate', () => {
+        const fps = Math.round(this.game.loop.actualFps);
+        const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
+        const memMb = mem ? Math.round(mem.usedJSHeapSize / 1024 / 1024) : -1;
+        const objs = this.children.length;
+        fpsText.setText(`FPS:${fps}  MEM:${memMb >= 0 ? memMb + 'MB' : '–'}  OBJ:${objs}`);
+        if (memMb >= 300) {
+          console.warn(`[Performance] Memory usage high: ${memMb}MB`);
+        }
+      });
+    }
   }
 
   update(time: number, delta: number) {
