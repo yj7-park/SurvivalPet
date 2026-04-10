@@ -510,6 +510,23 @@ function drawDoor(pal: Palette): HTMLCanvasElement {
   return c;
 }
 
+function drawDoorOpen(pal: Palette): HTMLCanvasElement {
+  const c = makeCanvas(); const ctx = c.getContext('2d')!;
+  ctx.clearRect(0, 0, 32, 32);
+  structBase(ctx, pal);
+  // Door frame: top and vertical posts
+  ctx.fillStyle = '#1a1008';
+  ctx.fillRect(10, 0, 12, 3);   // top frame
+  ctx.fillRect(10, 0, 2, 28);   // left post
+  ctx.fillRect(20, 0, 2, 28);   // right post
+  // Open door panel swept horizontally to the right
+  ctx.fillStyle = pal.mid;
+  ctx.fillRect(20, 3, 10, 4);
+  ctx.fillStyle = pal.light;
+  ctx.fillRect(20, 3, 10, 1);
+  return c;
+}
+
 function drawRoof(pal: Palette): HTMLCanvasElement {
   const c = makeCanvas(); const ctx = c.getContext('2d')!;
   ctx.clearRect(0, 0, 32, 32);
@@ -1176,6 +1193,7 @@ export function registerTextures(scene: Phaser.Scene): void {
   // Structures (wood)
   scene.textures.addCanvas('struct_wall_wood',      drawWall(PAL.wood, true));
   scene.textures.addCanvas('struct_door_wood',      drawDoor(PAL.wood));
+  scene.textures.addCanvas('struct_door_wood_open', drawDoorOpen(PAL.wood));
   scene.textures.addCanvas('struct_roof_wood',      drawRoof(PAL.wood));
   scene.textures.addCanvas('struct_bed_wood',       drawBed(PAL.wood));
   scene.textures.addCanvas('struct_table_wood',     drawTableFurniture(PAL.wood));
@@ -1186,6 +1204,7 @@ export function registerTextures(scene: Phaser.Scene): void {
   // Structures (stone)
   scene.textures.addCanvas('struct_wall_stone',      drawWall(PAL.stone, true));
   scene.textures.addCanvas('struct_door_stone',      drawDoor(PAL.stone));
+  scene.textures.addCanvas('struct_door_stone_open', drawDoorOpen(PAL.stone));
   scene.textures.addCanvas('struct_roof_stone',      drawRoof(PAL.stone));
   scene.textures.addCanvas('struct_bed_stone',       drawBed(PAL.stone));
   scene.textures.addCanvas('struct_table_stone',     drawTableFurniture(PAL.stone));

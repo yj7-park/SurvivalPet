@@ -29,11 +29,12 @@ export class SitSystem {
   getChairType(): string { return this.chairType; }
 
   /** Call every frame. Slowly recovers fatigue while seated. */
-  update(delta: number, survival: SurvivalStats): void {
+  update(delta: number, survival: SurvivalStats, isIndoor = false): void {
     if (!this.sitting) return;
     const rate = CHAIR_REGEN[this.chairType] ?? CHAIR_REGEN['chair_wood'];
+    const indoorMult = isIndoor ? 1.1 : 1.0;
     // rate = fatigue per game hour; recover proportional to real time elapsed
-    const recovered = (rate / MS_PER_GAME_HOUR) * delta;
+    const recovered = (rate / MS_PER_GAME_HOUR) * delta * indoorMult;
     survival.sleep(recovered);
   }
 }

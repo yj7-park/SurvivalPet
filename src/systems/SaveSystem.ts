@@ -37,6 +37,7 @@ export interface BuildingSaveEntry {
   tileY: number;
   durability: number;
   material: 'wood' | 'stone';
+  doorOpen?: boolean;
 }
 
 export interface WorldSaveData {

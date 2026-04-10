@@ -21,6 +21,7 @@ export class Player {
     right: Phaser.Input.Keyboard.Key;
   };
   private tiles: TileType[][] | null = null;
+  private buildingPassCb?: (tx: number, ty: number) => boolean;
 
   readonly appearance: number;
 
@@ -38,6 +39,7 @@ export class Player {
   }
 
   setTiles(tiles: TileType[][]) { this.tiles = tiles; }
+  setBuildingPassCallback(cb: (tx: number, ty: number) => boolean): void { this.buildingPassCb = cb; }
 
   /** 외부(GameScene lock-on / auto-move)에서 타일 충돌을 적용해 이동 */
   moveWithCollision(dx: number, dy: number): void {
@@ -116,10 +118,16 @@ export class Player {
     return this.tiles[ty]?.[tx] ?? TileType.Dirt;
   }
 
-  /** 픽셀 좌표가 통과 가능한 타일인지 확인 (물 포함) */
+  /** 픽셀 좌표가 통과 가능한 타일인지 확인 (물 포함, 건물 충돌 포함) */
   private isTilePassable(px: number, py: number): boolean {
     if (!this.tiles) return true;
     const tile = this.getTileAt(px, py);
-    return tile === TileType.Dirt || tile === TileType.Water;
+    if (tile !== TileType.Dirt && tile !== TileType.Water) return false;
+    if (this.buildingPassCb) {
+      const tx = Math.floor(px / TILE_SIZE);
+      const ty = Math.floor(py / TILE_SIZE);
+      if (!this.buildingPassCb(tx, ty)) return false;
+    }
+    return true;
   }
 }

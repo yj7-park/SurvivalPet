@@ -80,6 +80,7 @@ export class BuildSystem {
   private buildProgressBg!: Phaser.GameObjects.Rectangle;
   private buildProgressFill!: Phaser.GameObjects.Rectangle;
   private buildCompleteCallback: ((struct: PlacedStructure) => void) | null = null;
+  private isDoorOpenCb?: (id: string) => boolean;
 
   // 철거 상태
   private demolishTarget: PlacedStructure | null = null;
@@ -103,6 +104,7 @@ export class BuildSystem {
   }
 
   setBuildCompleteCallback(cb: (struct: PlacedStructure) => void): void { this.buildCompleteCallback = cb; }
+  setDoorOpenCallback(cb: (id: string) => boolean): void { this.isDoorOpenCb = cb; }
   setDemolishCompleteCallback(cb: (info: { defName: string; material: StructMaterial; tileX: number; tileY: number; firebaseId?: string }) => void): void { this.onDemolishComplete = cb; }
 
   setFirebaseId(tileX: number, tileY: number, id: string): void { this.firebaseIds.set(this.tileKey(tileX, tileY), id); }
@@ -139,6 +141,9 @@ export class BuildSystem {
   isPassable(tx: number, ty: number): boolean {
     const s = this.getAt(tx, ty);
     if (!s) return true;
+    if (s.defName === 'door') {
+      return this.isDoorOpenCb ? this.isDoorOpenCb(s.id) : true;
+    }
     return STRUCTURE_DEFS[s.defName].passable;
   }
 

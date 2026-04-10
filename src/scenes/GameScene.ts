@@ -44,6 +44,8 @@ import { SoundSystem } from '../systems/SoundSystem';
 import { SitSystem } from '../systems/SitSystem';
 import { TutorialSystem } from '../systems/TutorialSystem';
 import { CheatsheetPanel } from '../ui/CheatsheetPanel';
+import { DoorSystem } from '../systems/DoorSystem';
+import { RoofSystem } from '../systems/RoofSystem';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -193,6 +195,14 @@ export class GameScene extends Phaser.Scene {
   // 식탁 보너스 아이콘 (world-space)
   private tableBonusText!: Phaser.GameObjects.Text;
 
+  // 문 & 실내/실외 시스템
+  private doorSystem = new DoorSystem();
+  private roofSystem = new RoofSystem();
+  private playerIsIndoor = false;
+  private lastIndoorTileX = -1;
+  private lastIndoorTileY = -1;
+  private doorHintText!: Phaser.GameObjects.Text;
+
   // Individual tree sprites for depth sorting
   private treeSprites = new Map<string, Phaser.GameObjects.Image>();
 
@@ -334,6 +344,13 @@ export class GameScene extends Phaser.Scene {
 
     // 건설 완료 시 큐 진행 + XP + 행복
     this.buildSystem.setBuildCompleteCallback((struct) => {
+      // 문 & 지붕 시스템 등록
+      if (struct.defName === 'door') {
+        this.doorSystem.registerDoor(struct.id, struct.tileX, struct.tileY);
+      }
+      if (struct.defName === 'roof') {
+        this.roofSystem.addRoof(struct.tileX, struct.tileY);
+      }
       this.proficiency.addXP('building', 15);
       this.actionSystem.onActionDone('build', this.survival);
       this.survival.addFatigue(5); // 건설 피로
@@ -353,6 +370,10 @@ export class GameScene extends Phaser.Scene {
       }
     });
     this.buildSystem.setDemolishCompleteCallback((info) => {
+      // 문 & 지붕 시스템 해제
+      const demolishId = this.buildSystem.tileKey(info.tileX, info.tileY);
+      if (info.defName === 'door') this.doorSystem.unregisterDoor(demolishId);
+      if (info.defName === 'roof') this.roofSystem.removeRoof(info.tileX, info.tileY);
       this.proficiency.addXP('building', 8);
       this.actionSystem.onActionDone('demolish', this.survival);
       if (this.isMultiplayer && info.firebaseId) {
@@ -622,6 +643,17 @@ export class GameScene extends Phaser.Scene {
         }
         return;
       }
+      if (clickedStructure?.defName === 'door') {
+        const doorX = clickedStructure.tileX * TILE_SIZE + TILE_SIZE / 2;
+        const doorY = clickedStructure.tileY * TILE_SIZE + TILE_SIZE / 2;
+        const doorDist = Math.hypot(this.player.sprite.x - doorX, this.player.sprite.y - doorY);
+        if (doorDist <= BUILD_RANGE * 1.5) {
+          this.toggleDoor(clickedStructure.id, clickedStructure.material);
+        } else {
+          this.moveTarget = { worldX: doorX, worldY: doorY };
+        }
+        return;
+      }
       if (clickedStructure?.defName === 'bed') {
         const bedX = clickedStructure.tileX * TILE_SIZE + TILE_SIZE / 2;
         const bedY = clickedStructure.tileY * TILE_SIZE + TILE_SIZE / 2;
@@ -727,6 +759,17 @@ export class GameScene extends Phaser.Scene {
       backgroundColor: '#00000088', padding: { x: 3, y: 1 },
     }).setDepth(200).setVisible(false).setOrigin(0.5, 1);
 
+    // Door hint — fixed screen-space hint (bottom center)
+    this.doorHintText = this.add.text(this.scale.width / 2, this.scale.height - 32, '[E] 문 열기/닫기', {
+      fontSize: '12px', color: '#ffe8a0', fontFamily: 'monospace',
+      backgroundColor: '#00000099', padding: { x: 8, y: 4 },
+    }).setScrollFactor(0).setDepth(500).setOrigin(0.5).setVisible(false);
+
+    // Player building collision
+    this.player.setBuildingPassCallback((tx, ty) => this.buildSystem.isPassable(tx, ty));
+    // Door system callback for BuildSystem
+    this.buildSystem.setDoorOpenCallback((id) => this.doorSystem.isOpen(id));
+
     // Zoom wheel
     this.input.on('wheel', (_: unknown, __: unknown, ___: unknown, deltaY: number) => {
       const cam = this.cameras.main;
@@ -738,6 +781,18 @@ export class GameScene extends Phaser.Scene {
     this.input.keyboard!.on('keydown-DOWN', () => this.commandQueue.clearAll());
     this.input.keyboard!.on('keydown-LEFT', () => this.commandQueue.clearAll());
     this.input.keyboard!.on('keydown-RIGHT', () => this.commandQueue.clearAll());
+
+    // E key: interact with nearest door
+    this.input.keyboard!.on('keydown-E', () => {
+      const nearest = this.doorSystem.getNearestInRange(this.player.sprite.x, this.player.sprite.y);
+      if (nearest) {
+        const struct = this.buildSystem.getAt(
+          Math.floor((nearest.door.buildingId.split(',')[0] as unknown as number)),
+          Math.floor((nearest.door.buildingId.split(',')[1] as unknown as number)),
+        );
+        if (struct) this.toggleDoor(struct.id, struct.material);
+      }
+    });
 
     // B key: toggle build panel
     this.input.keyboard!.on('keydown-B', () => this.toggleBuildPanel());
@@ -1174,6 +1229,22 @@ export class GameScene extends Phaser.Scene {
     this.player.update(delta, suppressKeys, this.survival.fatigueSpeedMult * this.survival.hungerSpeedMult);
     this.interaction.update(delta);
 
+    // ── 실내/실외 상태 갱신 (타일 변화 시에만) ───────────────
+    {
+      const ptx = Math.floor(this.player.sprite.x / TILE_SIZE);
+      const pty = Math.floor(this.player.sprite.y / TILE_SIZE);
+      if (ptx !== this.lastIndoorTileX || pty !== this.lastIndoorTileY) {
+        this.lastIndoorTileX = ptx;
+        this.lastIndoorTileY = pty;
+        this.playerIsIndoor = this.roofSystem.isCovered(ptx, pty);
+      }
+    }
+
+    // ── 문 근처 힌트 표시 ─────────────────────────────────────
+    this.doorHintText.setVisible(
+      this.doorSystem.hasDoorNearby(this.player.sprite.x, this.player.sprite.y),
+    );
+
     // ── 깊이 정렬: Y 좌표 기반으로 캐릭터가 나무 뒤/앞에 표시되도록 ───
     // 나무 depth = (tileY+1)*TILE_SIZE, 플레이어 depth = sprite.y (같은 좌표계)
     this.player.sprite.setDepth(this.player.sprite.y);
@@ -1203,7 +1274,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     // ── SitSystem 업데이트 ────────────────────────────────
-    this.sitSystem.update(delta, this.survival);
+    this.sitSystem.update(delta, this.survival, this.playerIsIndoor);
 
     // Sleep text: world-space, follows player
     if (this.survival.isForcedSleep) {
@@ -1386,6 +1457,11 @@ export class GameScene extends Phaser.Scene {
     );
     this.animalMgr?.spawnForMap(this.seed, mx, my, this.currentTiles, this, mapDeadIds);
     this.buildSystem?.clearAll();
+    this.doorSystem?.clear();
+    this.roofSystem?.clear();
+    this.lastIndoorTileX = -1;
+    this.lastIndoorTileY = -1;
+    this.playerIsIndoor = false;
   }
 
   private restoreTree(tx: number, ty: number): void {
@@ -1475,20 +1551,9 @@ export class GameScene extends Phaser.Scene {
     return { x: cx * TILE_SIZE + TILE_SIZE / 2, y: cy * TILE_SIZE + TILE_SIZE / 2 };
   }
 
-  /** 지붕 아래 타일 Set 반환 (인접 8방향 내 지붕 구조물의 타일) */
+  /** 지붕 아래 타일 Set 반환 (RoofSystem 위임) */
   private getRoofedTiles(): Set<string> {
-    const roofed = new Set<string>();
-    for (const s of this.buildSystem.getAllStructures()) {
-      if (s.defName === 'roof') {
-        // 지붕 자신과 인접 8방향 타일을 실내로 처리
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            roofed.add(`${s.tileX + dx},${s.tileY + dy}`);
-          }
-        }
-      }
-    }
-    return roofed;
+    return this.roofSystem.getCoveredSet();
   }
 
   private executeMapTransition(nmx: number, nmy: number, npx: number, npy: number): void {
@@ -2101,7 +2166,7 @@ export class GameScene extends Phaser.Scene {
     const bedType = material === 'wood'
       ? ('bed_wood' as const)
       : ('bed_stone' as const);
-    const isIndoor = this.getRoofedTiles().has(`${tileX},${tileY}`);
+    const isIndoor = this.roofSystem.isCovered(tileX, tileY);
 
     const ok = this.sleepSystem.startSleep(bedType, isIndoor, (reason) => this.onWake(reason));
     if (ok) {
@@ -2111,6 +2176,29 @@ export class GameScene extends Phaser.Scene {
       this.sleepOverlay.show(this.survival, this.gameTime, () => {
         this.sleepSystem.wakeUp('user');
       });
+    }
+  }
+
+  private toggleDoor(buildingId: string, material: 'wood' | 'stone'): void {
+    const playerId = localStorage.getItem('survival_player_id') ?? 'local';
+    const ok = this.doorSystem.interact(buildingId, playerId);
+    if (!ok) {
+      this.showNotificationPopup('잠긴 문입니다', '#ff8844');
+      return;
+    }
+    const isOpen = this.doorSystem.isOpen(buildingId);
+    this.updateDoorSprite(buildingId, material, isOpen);
+    this.soundSystem.play(isOpen ? 'door_open' : 'door_close');
+  }
+
+  private updateDoorSprite(buildingId: string, material: 'wood' | 'stone', open: boolean): void {
+    const struct = this.buildSystem.getAt(
+      parseInt(buildingId.split(',')[0]),
+      parseInt(buildingId.split(',')[1]),
+    );
+    if (struct) {
+      const texKey = open ? `struct_door_${material}_open` : `struct_door_${material}`;
+      struct.sprite.setTexture(texKey);
     }
   }
 
@@ -2208,6 +2296,7 @@ export class GameScene extends Phaser.Scene {
           tileY: s.tileY,
           durability: s.durability,
           material: s.material,
+          ...(s.defName === 'door' ? { doorOpen: this.doorSystem.isOpen(s.id) } : {}),
         })),
         clearedTrees: [...this.clearedTrees].map(({ tx, ty, regrowAt }) => ({ tileX: tx, tileY: ty, regrowAt })),
         clearedRocks: [...this.clearedRocks].map(({ tx, ty }) => ({ tileX: tx, tileY: ty })),
@@ -2300,6 +2389,14 @@ export class GameScene extends Phaser.Scene {
     // 건설물 복원
     for (const b of saveData.world.buildings) {
       this.buildSystem.forceRestoreStructure(b.type, b.material, b.tileX, b.tileY, b.durability);
+      const bId = this.buildSystem.tileKey(b.tileX, b.tileY);
+      if (b.type === 'door') {
+        this.doorSystem.registerDoor(bId, b.tileX, b.tileY, b.doorOpen ?? false);
+        if (b.doorOpen) this.updateDoorSprite(bId, b.material as 'wood' | 'stone', true);
+      }
+      if (b.type === 'roof') {
+        this.roofSystem.addRoof(b.tileX, b.tileY);
+      }
     }
   }
 
