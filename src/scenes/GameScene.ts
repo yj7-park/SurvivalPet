@@ -6,6 +6,9 @@ import { SurvivalStats } from '../systems/SurvivalStats';
 import { GameTime } from '../systems/GameTime';
 import { MultiplayerSystem, RemotePlayerState } from '../systems/MultiplayerSystem';
 import { PlayerListPanel } from '../ui/PlayerListPanel';
+import { MapCache } from '../systems/MapCache';
+import { MapTransitionSystem } from '../systems/MapTransitionSystem';
+import { MiniMapPanel } from '../ui/MiniMapPanel';
 import { registerTextures } from '../world/SpriteGenerator';
 import { AnimalManager } from '../systems/AnimalManager';
 import { InteractionSystem } from '../systems/InteractionSystem';
@@ -63,7 +66,11 @@ export class GameScene extends Phaser.Scene {
   isMultiplayer = false;
   private playerListPanel!: PlayerListPanel;
 
-  private preloadedMaps = new Map<string, ReturnType<MapGenerator['generateMap']>>();
+  private mapCache = new MapCache();
+  private mapTransition!: MapTransitionSystem;
+  private miniMap!: MiniMapPanel;
+  private visitedMaps = new Set<string>();
+  private killedEnemiesAll = new Set<string>(); // all killed enemy IDs across maps
   private currentTiles: TileType[][] = [];
 
   // World-space only: follows player
@@ -198,7 +205,8 @@ export class GameScene extends Phaser.Scene {
     const startMx = this.mapX, startMy = this.mapY;
     const firstMap = this.mapGenerator.generateMap(startMx, startMy);
     this.currentTiles = firstMap.tiles;
-    this.preloadedMaps.set(`${startMx},${startMy}`, firstMap);
+    this.mapCache.set(startMx, startMy, firstMap);
+    this.visitedMaps.add(`${startMx},${startMy}`);
     this.loadMap(startMx, startMy);
 
     const start = this.findStartTile(this.currentTiles);
@@ -208,6 +216,19 @@ export class GameScene extends Phaser.Scene {
 
     this.cameras.main.startFollow(this.player.sprite, true);
     this.cameras.main.setZoom(2);
+
+    // 맵 전환 시스템
+    this.mapTransition = new MapTransitionSystem(
+      this,
+      (nmx, nmy, npx, npy) => this.executeMapTransition(nmx, nmy, npx, npy),
+      (msg) => this.showNotificationPopup(msg, '#ffaa44'),
+    );
+
+    // 미니맵 패널
+    this.miniMap = new MiniMapPanel(
+      () => ({ mapX: this.mapX, mapY: this.mapY }),
+      () => this.visitedMaps,
+    );
 
     // 광란 오라 (플레이어 주변 빨간 원)
     this.frenzyAura = this.add.arc(0, 0, 16, 0, 360, false, 0xff2222, 0.5)
@@ -541,6 +562,9 @@ export class GameScene extends Phaser.Scene {
     // B key: toggle build panel
     this.input.keyboard!.on('keydown-B', () => this.toggleBuildPanel());
 
+    // M key: toggle minimap
+    this.input.keyboard!.on('keydown-M', () => this.miniMap.toggle());
+
     // V key: toggle inventory (handled by UIScene keyboard listener)
 
     // ESC: exit build mode, cancel interaction, close panels, unlock target, clear queue
@@ -846,7 +870,8 @@ export class GameScene extends Phaser.Scene {
     const suppressKeys = this.survival.isIncapacitated
       || autoTarget !== null
       || (lockTarget !== null && this.combat.tracking)
-      || this.buildAutoMoveTarget !== null;
+      || this.buildAutoMoveTarget !== null
+      || this.mapTransition?.isTransitioning;
 
     this.player.update(delta, suppressKeys);
     this.interaction.update(delta);
@@ -887,7 +912,8 @@ export class GameScene extends Phaser.Scene {
       this.sleepText.setVisible(false);
     }
 
-    this.checkMapTransition();
+    this.mapTransition.check(this.player.sprite.x, this.player.sprite.y, this.mapX, this.mapY);
+    this.miniMap.update(delta);
     if (this.isMultiplayer) {
       const isMoving = this.player.isMovingByKeyboard() || this.combat.tracking;
       this.multiplayerSys.uploadState(
@@ -997,6 +1023,7 @@ export class GameScene extends Phaser.Scene {
     this.pauseMenu?.close();
     this.scene.stop('UIScene');
     this.playerListPanel?.destroy();
+    this.miniMap?.destroy();
     void this.multiplayerSys?.leaveRoom();
     this.interaction?.destroy();
     this.animalMgr?.destroyAll();
@@ -1010,9 +1037,8 @@ export class GameScene extends Phaser.Scene {
   // ── Map ──────────────────────────────────────────────────
 
   private loadMap(mx: number, my: number) {
-    const key = `${mx},${my}`;
-    const mapData = this.preloadedMaps.get(key) ?? this.mapGenerator.generateMap(mx, my);
-    this.preloadedMaps.delete(key);
+    const mapData = this.mapCache.getOrGenerate(mx, my, this.mapGenerator);
+    this.mapCache.delete(mx, my);
     this.currentTiles = mapData.tiles;
 
     if (this.tileRT) this.tileRT.destroy();
@@ -1035,7 +1061,11 @@ export class GameScene extends Phaser.Scene {
     this.clearedRocks = [];
 
     this.interaction?.setTiles(this.currentTiles);
-    this.animalMgr?.spawnForMap(this.seed, mx, my, this.currentTiles, this, new Set());
+    // Filter killed enemies relevant to this map
+    const mapDeadIds = new Set<string>(
+      [...this.killedEnemiesAll].filter(id => id.startsWith(`${mx}_${my}_`)),
+    );
+    this.animalMgr?.spawnForMap(this.seed, mx, my, this.currentTiles, this, mapDeadIds);
     this.buildSystem?.clearAll();
   }
 
@@ -1109,41 +1139,36 @@ export class GameScene extends Phaser.Scene {
     return { x: cx * TILE_SIZE + TILE_SIZE / 2, y: cy * TILE_SIZE + TILE_SIZE / 2 };
   }
 
-  private checkMapTransition() {
-    const { x: px, y: py } = this.player.sprite;
-    const mw = MAP_W * TILE_SIZE, mh = MAP_H * TILE_SIZE;
+  private executeMapTransition(nmx: number, nmy: number, npx: number, npy: number): void {
+    // Save dead enemies for current map before leaving
+    for (const id of this.animalMgr.getDeadIds()) {
+      this.killedEnemiesAll.add(id);
+    }
 
-    let nmx = this.mapX, nmy = this.mapY, npx = px, npy = py;
+    this.mapX = nmx;
+    this.mapY = nmy;
+    this.visitedMaps.add(`${nmx},${nmy}`);
+    this.player.sprite.setPosition(npx, npy);
+    this.loadMap(nmx, nmy);
+    this.preloadAdjacentMaps();
 
-    if (px < 0)   { nmx--; npx = mw + px; }
-    else if (px >= mw) { nmx++; npx = px - mw; }
-    if (py < 0)   { nmy--; npy = mh + py; }
-    else if (py >= mh) { nmy++; npy = py - mh; }
+    // Force Firebase position update on map change
+    if (this.isMultiplayer) {
+      this.multiplayerSys.forceUploadPosition(npx, npy, nmx, nmy, this.player.dir);
+    }
 
-    if (nmx !== this.mapX || nmy !== this.mapY) {
-      nmx = Phaser.Math.Clamp(nmx, 0, 9);
-      nmy = Phaser.Math.Clamp(nmy, 0, 9);
-      if (nmx !== this.mapX || nmy !== this.mapY) {
-        this.mapX = nmx; this.mapY = nmy;
-        this.player.sprite.setPosition(npx, npy);
-        this.loadMap(this.mapX, this.mapY);
-        this.preloadAdjacentMaps();
-      }
+    // Auto-save on map transition
+    if (!this.isMultiplayer) {
+      this.saveSystem.saveAuto(this.collectSaveData());
     }
   }
 
   private preloadAdjacentMaps() {
     for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
       const mx = this.mapX + dx, my = this.mapY + dy;
-      if (mx < 0 || mx > 9 || my < 0 || my > 9) continue;
-      const key = `${mx},${my}`;
-      if (!this.preloadedMaps.has(key)) {
-        this.time.delayedCall(120, () => {
-          if (!this.preloadedMaps.has(key))
-            this.preloadedMaps.set(key, this.mapGenerator.generateMap(mx, my));
-        });
-      }
+      this.mapCache.requestGenerate(mx, my, this.mapGenerator, this);
     }
+    this.mapCache.evict(this.mapX, this.mapY);
   }
 
   // ── Multiplayer ──────────────────────────────────────────
@@ -1746,6 +1771,11 @@ export class GameScene extends Phaser.Scene {
         })),
         clearedTrees: [...this.clearedTrees].map(({ tx, ty }) => ({ tileX: tx, tileY: ty })),
         clearedRocks: [...this.clearedRocks].map(({ tx, ty }) => ({ tileX: tx, tileY: ty })),
+        visitedMaps: [...this.visitedMaps].map(k => k.split(',').map(Number) as [number, number]),
+        killedEnemies: [
+          ...this.killedEnemiesAll,
+          ...this.animalMgr.getDeadIds(),
+        ].filter((v, i, a) => a.indexOf(v) === i),
         gameTime: {
           day: this.gameTime.day,
           timeOfDay: this.gameTime.totalGameSeconds % 86400,
@@ -1783,6 +1813,18 @@ export class GameScene extends Phaser.Scene {
 
     // 게임 시간 복원
     this.gameTime.setElapsed(saveData.world.gameTime.realElapsedMs);
+
+    // 방문 맵 & 처치 적 복원
+    if (saveData.world.visitedMaps) {
+      for (const [mx, my] of saveData.world.visitedMaps) {
+        this.visitedMaps.add(`${mx},${my}`);
+      }
+    }
+    if (saveData.world.killedEnemies) {
+      for (const id of saveData.world.killedEnemies) {
+        this.killedEnemiesAll.add(id);
+      }
+    }
 
     // 채굴된 암반 복원
     for (const r of saveData.world.clearedRocks) {

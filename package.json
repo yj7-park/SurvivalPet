@@ -1,6 +1,6 @@
 {
   "name": "survival-sim",
-  "version": "0.20.0",
+  "version": "0.21.0",
   "private": true,
   "scripts": {
     "dev": "vite",

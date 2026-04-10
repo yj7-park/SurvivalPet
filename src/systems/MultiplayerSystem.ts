@@ -134,6 +134,18 @@ export class MultiplayerSystem {
     });
   }
 
+  /** Force-upload position immediately (e.g. on map transition) */
+  forceUploadPosition(x: number, y: number, mapX: number, mapY: number, facing: Direction): void {
+    if (!this.isEnabled) return;
+    this.lastUpload = 0; // reset throttle
+    set(ref(this.db, `rooms/${this.seed}/players/${this.playerId}`), {
+      name: this.localName, skin: this.localSkin,
+      x, y, mapX, mapY, facing, isMoving: false,
+      hp: 0, hunger: 0, fatigue: 0, frenzy: false, weapon: null,
+      online: true, lastSeen: Date.now(),
+    });
+  }
+
   uploadBuildingAdded(entry: Omit<WorldBuildingEntry, 'id'>): string {
     if (!this.isEnabled) return '';
     const buildingsRef = ref(this.db, `rooms/${this.seed}/world/buildings`);

@@ -46,6 +46,8 @@ export interface WorldSaveData {
     timeOfDay: number;
     realElapsedMs: number;
   };
+  visitedMaps: Array<[number, number]>;
+  killedEnemies: string[];
 }
 
 export interface SettingsSaveData {
@@ -177,6 +179,12 @@ export class SaveSystem {
     }
     if (data.character && data.character['appearance'] === undefined) {
       data.character['appearance'] = 0;
+    }
+    // Migrate: add visitedMaps/killedEnemies if missing
+    const world = (data as Record<string, unknown>)['world'] as Record<string, unknown> | undefined;
+    if (world) {
+      if (!Array.isArray(world['visitedMaps'])) world['visitedMaps'] = [];
+      if (!Array.isArray(world['killedEnemies'])) world['killedEnemies'] = [];
     }
     return data as unknown as SaveData;
   }
