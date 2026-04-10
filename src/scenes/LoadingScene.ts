@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { SaveData, SaveSystem } from '../systems/SaveSystem';
+import { UI_COLORS } from '../config/uiColors';
 
 interface LoadingData {
   seed: string;
@@ -33,23 +34,24 @@ export class LoadingScene extends Phaser.Scene {
   }
 
   create() {
-    this.cameras.main.setBackgroundColor('#0a0f0a');
+    this.cameras.main.setBackgroundColor('#0e0a06');
 
     const overlay = document.createElement('div');
     overlay.style.cssText = `
       position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
-      background:rgba(5,10,5,0.95);border:1px solid #446;
-      border-radius:8px;padding:32px 40px;z-index:300;color:#eee;
-      font:13px monospace;min-width:340px;text-align:center;
+      background:${UI_COLORS.panelBg};border:1px solid ${UI_COLORS.panelBorder};
+      border-radius:8px;padding:36px 48px;z-index:300;color:${UI_COLORS.textPrimary};
+      font:11px 'Courier New',monospace;min-width:360px;text-align:center;
     `;
     overlay.innerHTML = `
-      <div style="font-size:20px;margin-bottom:20px">🌍 세계를 생성하는 중…</div>
-      <div style="background:#111;border-radius:6px;overflow:hidden;height:18px;margin-bottom:10px;border:1px solid #334">
-        <div id="ld-fill" style="height:100%;background:linear-gradient(90deg,#2a6e4a,#4aae7a);width:0%;transition:width 0.3s ease;border-radius:6px"></div>
+      <div style="font-size:24px;font-weight:bold;margin-bottom:6px;letter-spacing:4px">⛺ BASECAMP</div>
+      <div style="color:${UI_COLORS.textSecondary};margin-bottom:24px;font-size:10px">생존 시뮬레이션</div>
+      <div style="background:${UI_COLORS.gaugeBg};border-radius:6px;overflow:hidden;height:10px;margin-bottom:10px;border:1px solid ${UI_COLORS.slotBorder}">
+        <div id="ld-fill" style="height:100%;background:linear-gradient(90deg,#5a3a1a,#c8884a);width:0%;transition:width 0.3s ease;border-radius:6px"></div>
       </div>
-      <div id="ld-pct" style="color:#6ac;margin-bottom:6px">0%</div>
-      <div id="ld-label" style="color:#778;font-size:11px">초기화 중…</div>
-      <div style="color:#446;font-size:11px;margin-top:14px">seed: ${this.loadData.seed}</div>
+      <div id="ld-label" style="color:${UI_COLORS.textSecondary};font-size:10px;margin-bottom:8px">초기화 중…</div>
+      <div id="ld-pct" style="color:${UI_COLORS.textWarning};font-size:13px;margin-bottom:12px">0%</div>
+      <div style="color:${UI_COLORS.textDisabled};font-size:10px">seed: ${this.loadData.seed}</div>
     `;
 
     document.body.appendChild(overlay);
@@ -63,7 +65,12 @@ export class LoadingScene extends Phaser.Scene {
 
   private runSteps(idx: number): void {
     if (idx >= STEPS.length) {
-      this.time.delayedCall(200, () => this.launchGame());
+      // Brief pause then flash transition
+      this.time.delayedCall(300, () => {
+        this.cameras.main.flash(400, 255, 255, 255, false, () => {
+          this.launchGame();
+        });
+      });
       return;
     }
     const step = STEPS[idx];

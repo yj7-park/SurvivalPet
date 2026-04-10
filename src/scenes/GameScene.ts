@@ -66,6 +66,9 @@ import { TileRenderer, DIRT_TINTS } from '../rendering/TileRenderer';
 import { TreeRenderer } from '../rendering/TreeRenderer';
 import { ObjectRenderer } from '../rendering/ObjectRenderer';
 import { UI_COLORS, PANEL_CSS, BTN_CSS } from '../config/uiColors';
+import { TransitionSystem } from '../systems/TransitionSystem';
+import { SeasonCard } from '../ui/SeasonCard';
+import { StarLayer } from '../rendering/StarLayer';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -267,6 +270,11 @@ export class GameScene extends Phaser.Scene {
   private treeRenderer!: TreeRenderer;
   private objectRenderer!: ObjectRenderer;
 
+  // Transition & atmosphere
+  private transitionSystem!: TransitionSystem;
+  private seasonCard = new SeasonCard();
+  private starLayer?: StarLayer;
+
   // Other players
   private remotePlayerDisplays = new Map<string, {
     sprite: Phaser.GameObjects.Sprite;
@@ -337,6 +345,9 @@ export class GameScene extends Phaser.Scene {
     this.tileRenderer = new TileRenderer(this);
     this.treeRenderer = new TreeRenderer(this);
     this.objectRenderer = new ObjectRenderer(this);
+    this.transitionSystem = new TransitionSystem(this, this.scale.width, this.scale.height);
+    this.transitionSystem.playIntro();
+    this.starLayer = new StarLayer(this, this.seed);
 
     this.cameras.main.startFollow(this.player.sprite, true);
     this.cameras.main.setZoom(2);
@@ -1728,6 +1739,11 @@ export class GameScene extends Phaser.Scene {
     this.mapTransition.check(this.player.sprite.x, this.player.sprite.y, this.mapX, this.mapY);
     this.miniMap.update(delta);
 
+    // Sky tint + stars
+    const skyHour = this.gameTime.hour + this.gameTime.minute / 60;
+    this.transitionSystem?.update(skyHour, this.gameTime.season);
+    this.starLayer?.update(skyHour, delta);
+
     // 날씨 효과 적용 (이동속도·계절 나무밀도·겨울 힌트)
     const wxm = this.weather.effectSystem.getMultipliers(this.playerIsIndoor);
     const season = this.gameTime.season;
@@ -1740,6 +1756,7 @@ export class GameScene extends Phaser.Scene {
       }
       this.tileRenderer?.applySeasonTint(season, this.tileRT);
       this.treeRenderer?.onSeasonChanged(season);
+      this.seasonCard.show(season);
     }
 
     // 모닥불 시스템 업데이트
@@ -1928,6 +1945,9 @@ export class GameScene extends Phaser.Scene {
     this.tileRenderer?.clearMap();
     this.treeRenderer?.destroy();
     this.objectRenderer?.destroy();
+    this.transitionSystem?.destroy();
+    this.seasonCard?.destroy();
+    this.starLayer?.destroy();
     this.charRenderer?.destroy();
     this.logPanel?.close();
     this.notifySystem?.destroy();
@@ -3143,21 +3163,19 @@ export class GameScene extends Phaser.Scene {
       void this.multiplayerSys.leaveRoom();
     }
 
-    // 0.5초 후 사망 화면 표시
+    // 0.5초 후 사망 화면 표시 (TransitionSystem 경유)
     this.time.delayedCall(500, () => {
-      this.cameras.main.fadeOut(1000, 0, 0, 0, (_cam: unknown, progress: number) => {
-        if (progress === 1) {
-          this.deathScreen.show({
-            playtimeMs: this.playtimeMs,
-            enemiesKilled: this.enemiesKilled,
-            buildingsBuilt: this.buildingsBuilt,
-            onReturnToTitle: () => {
-              this.deathScreen.destroy();
-              this.scene.stop('UIScene');
-              this.scene.start('TitleScene');
-            },
-          });
-        }
+      this.transitionSystem?.playDeathSequence(() => {
+        this.deathScreen.show({
+          playtimeMs: this.playtimeMs,
+          enemiesKilled: this.enemiesKilled,
+          buildingsBuilt: this.buildingsBuilt,
+          onReturnToTitle: () => {
+            this.deathScreen.destroy();
+            this.scene.stop('UIScene');
+            this.scene.start('TitleScene');
+          },
+        });
       });
     });
   }
