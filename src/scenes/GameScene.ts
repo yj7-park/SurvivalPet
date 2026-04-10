@@ -1405,6 +1405,7 @@ export class GameScene extends Phaser.Scene {
     });
 
     // 신규 플레이어 튜토리얼
+    this.tutorialSystem.initScene(this);
     if (!TutorialSystem.isDone()) {
       this.tutorialSystem.start(this.makeTutorialState());
     }
