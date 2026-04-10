@@ -28,7 +28,7 @@ export class Player {
   constructor(scene: Phaser.Scene, x: number, y: number, stats: CharacterStats, appearance = 0) {
     this.stats = stats;
     this.appearance = appearance;
-    this.sprite = scene.add.sprite(x, y, `char_${appearance}_down`).setDepth(1);
+    this.sprite = scene.add.sprite(x, y, `char_skin${appearance}`, 0).setDepth(1);
     this.cursors = scene.input.keyboard!.createCursorKeys();
     this.wasd = {
       up:    scene.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.W),
@@ -95,7 +95,6 @@ export class Player {
 
     if (newDir !== this.dir) {
       this.dir = newDir;
-      this.sprite.setTexture(`char_${this.appearance}_${this.dir}`);
     }
   }
 

@@ -234,6 +234,189 @@ function drawCharacter(dir: 'down' | 'up' | 'left' | 'right', paletteIdx = 0): H
   return c;
 }
 
+// ── Walking frame spritesheet ───────────────────────────────────────────────────
+// Layout: 128×96px  (4 cols × 3 rows, each 32×32)
+//   Row 0 = down, Row 1 = up, Row 2 = left
+//   Col 0 = idle, Col 1-3 = walk frames
+//   Right direction uses left row with flipX
+
+const WALK_FRAME_OFFSETS = [
+  { leftY: 0,  rightY: 0,  bodyY: 0  }, // 0: idle
+  { leftY: -3, rightY: +3, bodyY: 0  }, // 1: walk_1
+  { leftY: 0,  rightY: 0,  bodyY: -1 }, // 2: walk_2
+  { leftY: +3, rightY: -3, bodyY: 0  }, // 3: walk_3
+];
+
+function drawCharFrameCanvas(dir: 'down' | 'up' | 'left', frameIdx: number, paletteIdx: number): HTMLCanvasElement {
+  const pal = CHAR_PALETTES[paletteIdx] ?? CHAR_PALETTES[0];
+  const off = WALK_FRAME_OFFSETS[frameIdx] ?? WALK_FRAME_OFFSETS[0];
+  const c = makeCanvas(32, 32);
+  const ctx = c.getContext('2d')!;
+  ctx.clearRect(0, 0, 32, 32);
+
+  const lY = off.leftY;
+  const rY = off.rightY;
+  const bY = off.bodyY;
+  const isBack = dir === 'up';
+  const isSide = dir === 'left';
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.beginPath();
+  ctx.ellipse(16, 30, 7, 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Legs with per-foot offsets
+  ctx.fillStyle = '#3a5fa0';
+  ctx.fillRect(10, 22 + lY, 5, Math.max(1, 8 - Math.abs(lY)));
+  ctx.fillRect(17, 22 + rY, 5, Math.max(1, 8 - Math.abs(rY)));
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(9,  28 + lY, 6, 3);
+  ctx.fillRect(17, 28 + rY, 6, 3);
+
+  // Body / shirt
+  ctx.fillStyle = pal.shirt;
+  ctx.fillRect(9, 13 + bY, 14, 11);
+  ctx.fillStyle = pal.shirtHighlight;
+  ctx.fillRect(9, 13 + bY, 4, 11);
+
+  // Arms
+  ctx.fillStyle = pal.shirt;
+  ctx.fillRect(5,  13 + bY, 4, 9);
+  ctx.fillRect(23, 13 + bY, 4, 9);
+  ctx.fillStyle = pal.skin;
+  ctx.fillRect(5,  21 + bY, 4, 3);
+  ctx.fillRect(23, 21 + bY, 4, 3);
+
+  // Neck + head
+  ctx.fillStyle = pal.skin;
+  ctx.fillRect(13, 10 + bY, 6, 4);
+  ctx.fillRect(9, 3, 14, 12);
+  ctx.fillStyle = pal.skinShadow;
+  ctx.fillRect(9,  3,  1, 1);
+  ctx.fillRect(22, 3,  1, 1);
+  ctx.fillRect(9,  14, 1, 1);
+  ctx.fillRect(22, 14, 1, 1);
+
+  // Face (hidden from back)
+  if (!isBack) {
+    ctx.fillStyle = '#1a1a1a';
+    if (isSide) {
+      ctx.fillRect(11, 7, 2, 2);
+    } else {
+      ctx.fillRect(11, 7, 3, 2);
+      ctx.fillRect(18, 7, 3, 2);
+    }
+    ctx.fillStyle = '#ffffff';
+    if (!isSide) {
+      ctx.fillRect(11, 7, 1, 1);
+      ctx.fillRect(18, 7, 1, 1);
+    }
+    ctx.fillStyle = '#c07060';
+    if (!isSide) ctx.fillRect(13, 11, 6, 1);
+  }
+
+  // Hair
+  ctx.fillStyle = pal.hair;
+  ctx.fillRect(9, 3, 14, 3);
+  ctx.fillRect(9, 3, 2, 5);
+  if (!isBack) ctx.fillRect(21, 3, 2, 5);
+
+  return c;
+}
+
+function drawCharSpritesheet(skinId: number): HTMLCanvasElement {
+  const c = makeCanvas(128, 96);
+  const ctx = c.getContext('2d')!;
+  const dirs: ('down' | 'up' | 'left')[] = ['down', 'up', 'left'];
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 4; col++) {
+      const frame = drawCharFrameCanvas(dirs[row], col, skinId);
+      ctx.drawImage(frame, col * 32, row * 32);
+    }
+  }
+  return c;
+}
+
+// ── Equipment overlay sprites ────────────────────────────────────────────────
+
+function drawOverlaySword(material: 'wood' | 'stone' | 'iron'): HTMLCanvasElement {
+  const c = makeCanvas();
+  const ctx = c.getContext('2d')!;
+  const blade  = material === 'iron' ? '#7090a8' : material === 'stone' ? '#a0a0a0' : '#a06030';
+  const guard  = material === 'iron' ? '#5070a0' : material === 'stone' ? '#707070' : '#6a3a10';
+  const handle = '#3a2010';
+  // Blade (pointing down by default; angle applied by CharacterRenderer)
+  ctx.fillStyle = blade;
+  ctx.fillRect(14, 5, 4, 17);
+  // Guard
+  ctx.fillStyle = guard;
+  ctx.fillRect(9, 20, 14, 3);
+  // Handle
+  ctx.fillStyle = handle;
+  ctx.fillRect(14, 23, 4, 7);
+  // Highlight
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.fillRect(14, 5, 1, 17);
+  return c;
+}
+
+function drawOverlayBow(): HTMLCanvasElement {
+  const c = makeCanvas();
+  const ctx = c.getContext('2d')!;
+  ctx.strokeStyle = '#8b5c2a';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(16, 16, 11, -Math.PI * 0.35, Math.PI * 0.35);
+  ctx.stroke();
+  ctx.strokeStyle = '#c8c8b0';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(16, 5); ctx.lineTo(16, 27);
+  ctx.stroke();
+  return c;
+}
+
+function drawOverlayShield(material: 'wood' | 'stone'): HTMLCanvasElement {
+  const c = makeCanvas();
+  const ctx = c.getContext('2d')!;
+  const fill    = material === 'wood' ? '#a0622a' : '#909090';
+  const outline = material === 'wood' ? '#5a3010' : '#606060';
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  ctx.moveTo(8, 6); ctx.lineTo(24, 6); ctx.lineTo(24, 20);
+  ctx.lineTo(16, 28); ctx.lineTo(8, 20);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = outline;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.15)';
+  ctx.beginPath();
+  ctx.moveTo(9, 7); ctx.lineTo(15, 7); ctx.lineTo(15, 14); ctx.lineTo(9, 14);
+  ctx.closePath(); ctx.fill();
+  return c;
+}
+
+function drawOverlayArmor(material: 'leather' | 'wood' | 'stone' | 'iron'): HTMLCanvasElement {
+  const c = makeCanvas();
+  const ctx = c.getContext('2d')!;
+  const fill: Record<string, string> = {
+    leather: '#7a4a20', wood: '#a0622a', stone: '#909090', iron: '#7090a8',
+  };
+  ctx.globalAlpha = 0.75;
+  ctx.fillStyle = fill[material] ?? '#808080';
+  // Chest plate
+  ctx.fillRect(9, 13, 14, 11);
+  // Shoulder pads
+  ctx.fillRect(5, 13, 4, 7);
+  ctx.fillRect(23, 13, 4, 7);
+  ctx.globalAlpha = 0.3;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(10, 14, 5, 8); // highlight
+  ctx.globalAlpha = 1;
+  return c;
+}
+
 function drawEnemy(): HTMLCanvasElement {
   const c = makeCanvas(32, 32);
   const ctx = c.getContext('2d')!;
@@ -1484,7 +1667,7 @@ export function registerTextures(scene: Phaser.Scene): void {
   scene.textures.addCanvas('tile_rock',  drawRock());
   scene.textures.addCanvas('obj_tree',   drawTree());
 
-  // Character sprites — 3 appearance palettes
+  // Character sprites — 3 appearance palettes (static textures for backward compat)
   for (let i = 0; i < 3; i++) {
     for (const dir of ['down', 'up', 'left', 'right'] as const) {
       scene.textures.addCanvas(`char_${i}_${dir}`, drawCharacter(dir, i));
@@ -1495,6 +1678,31 @@ export function registerTextures(scene: Phaser.Scene): void {
   scene.textures.addCanvas('char_up',    drawCharacter('up',    0));
   scene.textures.addCanvas('char_left',  drawCharacter('left',  0));
   scene.textures.addCanvas('char_right', drawCharacter('right', 0));
+
+  // Character spritesheets for walk animation (128×96, 4 cols × 3 rows, each 32×32)
+  for (let i = 0; i < 3; i++) {
+    const sheetTex = scene.textures.addCanvas(`char_skin${i}`, drawCharSpritesheet(i));
+    if (sheetTex) {
+      // Register individual frames: frameIndex = row * 4 + col
+      for (let row = 0; row < 3; row++) {
+        for (let col = 0; col < 4; col++) {
+          sheetTex.add(row * 4 + col, 0, col * 32, row * 32, 32, 32);
+        }
+      }
+    }
+  }
+
+  // Equipment overlay sprites
+  scene.textures.addCanvas('overlay_sword_wood',    drawOverlaySword('wood'));
+  scene.textures.addCanvas('overlay_sword_stone',   drawOverlaySword('stone'));
+  scene.textures.addCanvas('overlay_sword_iron',    drawOverlaySword('iron'));
+  scene.textures.addCanvas('overlay_bow',           drawOverlayBow());
+  scene.textures.addCanvas('overlay_shield_wood',   drawOverlayShield('wood'));
+  scene.textures.addCanvas('overlay_shield_stone',  drawOverlayShield('stone'));
+  scene.textures.addCanvas('overlay_armor_leather', drawOverlayArmor('leather'));
+  scene.textures.addCanvas('overlay_armor_wood',    drawOverlayArmor('wood'));
+  scene.textures.addCanvas('overlay_armor_stone',   drawOverlayArmor('stone'));
+  scene.textures.addCanvas('overlay_armor_iron',    drawOverlayArmor('iron'));
 
   // Items
   scene.textures.addCanvas('item_stone',            drawStoneItem());

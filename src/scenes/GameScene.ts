@@ -60,6 +60,8 @@ import { TouchInputSystem, isTouchDevice } from '../systems/TouchInputSystem';
 import { FarmingSystem } from '../systems/FarmingSystem';
 import { SEED_TO_CROP, SEED_ITEM_IDS, CROP_LABELS, CROP_EMOJI } from '../config/crops';
 import { FarmlandSaveEntry } from '../systems/SaveSystem';
+import { AnimationManager } from '../rendering/AnimationManager';
+import { CharacterRenderer } from '../rendering/CharacterRenderer';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -235,6 +237,9 @@ export class GameScene extends Phaser.Scene {
   // 터치 입력 시스템
   private touchInput!: TouchInputSystem;
 
+  // 캐릭터 렌더러 (애니메이션 + 장비 오버레이)
+  private charRenderer?: CharacterRenderer;
+
   // 농업 시스템
   private farmingSystem!: FarmingSystem;
   private hoeMode = false;
@@ -302,6 +307,7 @@ export class GameScene extends Phaser.Scene {
 
   create() {
     registerTextures(this);
+    AnimationManager.register(this);
 
     const playerId = getOrCreatePlayerId();
     this.charStats = new CharacterStats(this.seed, playerId, this.pendingCharStats);
@@ -321,6 +327,7 @@ export class GameScene extends Phaser.Scene {
     this.player = new Player(this, start.x, start.y, this.charStats, this.pendingAppearance);
     this.player.setTiles(this.currentTiles);
     this.player.sprite.setDepth(this.player.sprite.y);
+    this.charRenderer = new CharacterRenderer(this, this.player.sprite, this.pendingAppearance);
 
     this.cameras.main.startFollow(this.player.sprite, true);
     this.cameras.main.setZoom(2);
@@ -1633,6 +1640,25 @@ export class GameScene extends Phaser.Scene {
     // 나무 depth = (tileY+1)*TILE_SIZE, 플레이어 depth = sprite.y (같은 좌표계)
     this.player.sprite.setDepth(this.player.sprite.y);
 
+    // ── 캐릭터 렌더러 업데이트 (애니메이션 + 장비 오버레이 + 상태 시각) ──
+    if (this.charRenderer) {
+      const slots = this.equipmentSystem?.getSlots();
+      this.charRenderer.updateEquipment(
+        this.combat?.equippedWeapon?.id ?? null,
+        slots?.armor ?? null,
+        slots?.shield ?? null,
+      );
+      this.charRenderer.update(
+        this.player.dir,
+        this.player.isMovingByKeyboard() || (this.moveTarget !== null),
+        time / 1000,
+        this.survival.hp,
+        this.survival.hunger,
+        this.survival.isFrenzy,
+        this.sleepSystem.isSleeping(),
+      );
+    }
+
     // ── 동물 AI 업데이트 + 피격 처리 ────────────────────────
     this.animalMgr.update(delta, this.player.sprite.x, this.player.sprite.y, (dmg) => {
       this.combat.onPlayerHit(dmg);
@@ -1881,6 +1907,7 @@ export class GameScene extends Phaser.Scene {
     this.campfirePanel?.close();
     this.campfireSystem?.destroy();
     this.farmingSystem?.destroy();
+    this.charRenderer?.destroy();
     this.logPanel?.close();
     this.notifySystem?.destroy();
     this.touchInput?.disable();
@@ -2064,7 +2091,7 @@ export class GameScene extends Phaser.Scene {
       seen.add(p.id);
       let display = this.remotePlayerDisplays.get(p.id);
       if (!display) {
-        const sprite = this.add.sprite(p.renderX, p.renderY, `char_${p.skin}_${p.facing}`)
+        const sprite = this.add.sprite(p.renderX, p.renderY, `char_skin${p.skin}`, 0)
           .setDepth(2).setAlpha(0.85);
         const nameLabel = this.add.text(p.renderX, p.renderY - 20, p.name, {
           fontSize: '9px', color: '#fff', fontFamily: 'monospace',
@@ -2076,7 +2103,19 @@ export class GameScene extends Phaser.Scene {
         display = { sprite, nameLabel, statusLabel };
         this.remotePlayerDisplays.set(p.id, display);
       }
-      display.sprite.setPosition(p.renderX, p.renderY).setTexture(`char_${p.skin}_${p.facing}`);
+      // Play walk/idle animation for remote player
+      {
+        const remDir = p.facing === 'right' ? 'left' : p.facing;
+        const animKey = p.isMoving
+          ? `walk_${p.skin}_${remDir}`
+          : `idle_${p.skin}_${remDir}`;
+        if (display.sprite.anims.currentAnim?.key !== animKey) {
+          display.sprite.play(animKey, true);
+        }
+        display.sprite.setFlipX(p.facing === 'right');
+        display.sprite.setTint(p.frenzy ? 0xff6666 : 0xffffff);
+      }
+      display.sprite.setPosition(p.renderX, p.renderY);
       display.nameLabel.setPosition(p.renderX, p.renderY - 20).setText(p.name)
         .setColor(p.frenzy ? '#ff6666' : '#fff');
       display.statusLabel.setPosition(p.renderX, p.renderY - 12)
