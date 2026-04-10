@@ -53,13 +53,13 @@ export class Player {
       || this.wasd.up.isDown || this.wasd.down.isDown;
   }
 
-  update(delta: number, isIncapacitated: boolean) {
+  update(delta: number, isIncapacitated: boolean, externalSpeedMult = 1.0) {
     if (isIncapacitated) return;
 
     const dt = delta / 1000;
     // 물 위에 있으면 50% 속도
     const currentTile = this.getTileAt(this.sprite.x, this.sprite.y);
-    const speedMult = currentTile === TileType.Water ? 0.5 : 1.0;
+    const speedMult = (currentTile === TileType.Water ? 0.5 : 1.0) * externalSpeedMult;
     const speed = this.stats.moveSpeed * speedMult;
     const { left, right, up, down } = this.cursors;
 

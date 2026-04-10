@@ -35,6 +35,8 @@ import { PauseMenu } from '../ui/PauseMenu';
 import { ActionSystem } from '../systems/ActionSystem';
 import { DurabilitySystem } from '../systems/DurabilitySystem';
 import { HoverTooltip } from '../ui/HoverTooltip';
+import { SleepSystem } from '../systems/SleepSystem';
+import { SleepOverlay } from '../ui/SleepOverlay';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -129,15 +131,19 @@ export class GameScene extends Phaser.Scene {
   // 내구도 & 수리
   private durabilitySystem = new DurabilitySystem();
   private hoverTooltip!: HoverTooltip;
-  // 수리 진행 중 억제
   private isRepairing = false;
+
+  // 수면 시스템
+  private sleepSystem = new SleepSystem();
+  private sleepOverlay!: SleepOverlay;
+  // 피로 경고 추적 (한 번만 표시)
+  private fatigueWarnedAt40 = false;
+  private fatigueWarnedAt20 = false;
 
   // 행복 수치 & 광란
   private actionSystem = new ActionSystem();
   private frenzyAura!: Phaser.GameObjects.Arc;
   private frenzyRng!: SeededRandom;
-  private prevForcedSleep = false;
-
   // 건설 자동이동
   private buildAutoMoveTarget: { worldX: number; worldY: number } | null = null;
   private pendingBuild: { defName: string; material: StructMaterial; tileX: number; tileY: number } | null = null;
@@ -238,6 +244,9 @@ export class GameScene extends Phaser.Scene {
       () => this.visitedMaps,
     );
 
+    // 수면 오버레이
+    this.sleepOverlay = new SleepOverlay();
+
     // 내구도 호버 툴팁 & 수리
     this.hoverTooltip = new HoverTooltip(
       () => this.inventory,
@@ -277,6 +286,7 @@ export class GameScene extends Phaser.Scene {
     this.buildSystem.setBuildCompleteCallback((struct) => {
       this.proficiency.addXP('building', 15);
       this.actionSystem.onActionDone('build', this.survival);
+      this.survival.addFatigue(5); // 건설 피로
       this.commandQueue.completeCommand();
       this.processNextQueueCommand();
       if (this.isMultiplayer && struct) {
@@ -321,6 +331,9 @@ export class GameScene extends Phaser.Scene {
         woodcutting: 'woodcut', mining: 'mine', fishing: 'fish',
       };
       if (actionMap[type]) this.actionSystem.onActionDone(actionMap[type], this.survival);
+      // 활동별 피로 소모
+      const fatigueMap: Record<string, number> = { woodcutting: 3, mining: 4, fishing: 1 };
+      if (fatigueMap[type]) this.survival.addFatigue(fatigueMap[type]);
     });
 
     // Spawn animals on current map
@@ -350,6 +363,7 @@ export class GameScene extends Phaser.Scene {
     this.combat.setOnKillCallback(() => {
       this.proficiency.addXP('combat', 20);
       this.actionSystem.onActionDone('kill_enemy', this.survival);
+      this.survival.addFatigue(2); // 전투 피로
     });
 
     // Pointer events — use ptr.worldX/worldY (Phaser applies camera matrix correctly)
@@ -527,6 +541,17 @@ export class GameScene extends Phaser.Scene {
         } else {
           this.buildAutoMoveTarget = { worldX: kX, worldY: kY };
           this.pendingBuild = { defName: '__open_kitchen__', material: 'wood', tileX: clickedStructure.tileX, tileY: clickedStructure.tileY };
+        }
+        return;
+      }
+      if (clickedStructure?.defName === 'bed') {
+        const bedX = clickedStructure.tileX * TILE_SIZE + TILE_SIZE / 2;
+        const bedY = clickedStructure.tileY * TILE_SIZE + TILE_SIZE / 2;
+        const bedDist = Math.hypot(this.player.sprite.x - bedX, this.player.sprite.y - bedY);
+        if (bedDist <= BUILD_RANGE) {
+          this.tryStartSleep(clickedStructure.material, clickedStructure.tileX, clickedStructure.tileY);
+        } else {
+          this.moveTarget = { worldX: bedX, worldY: bedY };
         }
         return;
       }
@@ -738,8 +763,43 @@ export class GameScene extends Phaser.Scene {
       this.showNotificationPopup(result.ok ? '💾 자동 저장됨' : '⚠ 자동 저장 실패', result.ok ? '#ffffff' : '#ffaa44');
     }
 
-    this.gameTime.update(delta);
-    this.survival.update(delta);
+    // 수면 시스템: 시간 가속 및 피로 회복
+    const effectiveDelta = this.sleepSystem.update(delta, this.survival, this.gameTime);
+    this.gameTime.update(effectiveDelta);
+    this.survival.update(effectiveDelta);
+    if (this.sleepOverlay.isVisible()) {
+      this.sleepOverlay.update(this.survival, this.gameTime);
+    }
+
+    // 강제 수면 감지 (피로 0 → 강제 수면)
+    if (this.survival.fatigue === 0 && !this.sleepSystem.isSleeping()) {
+      this.showNotificationPopup('극도로 피곤합니다... 쓰러집니다', '#ffaa44');
+      this.time.delayedCall(1000, () => {
+        if (!this.sleepSystem.isSleeping()) {
+          this.sleepSystem.startForcedSleep((reason) => this.onWake(reason));
+          this.sleepOverlay.show(this.survival, this.gameTime, () => this.sleepSystem.wakeUp('user'));
+        }
+      });
+    }
+
+    // 피로 경고 단계
+    if (this.survival.fatigue <= 40 && this.survival.fatigue > 20 && !this.fatigueWarnedAt40) {
+      this.fatigueWarnedAt40 = true;
+      this.showNotificationPopup('😪 피곤합니다. 수면이 필요합니다', '#ffee44');
+    } else if (this.survival.fatigue > 40) {
+      this.fatigueWarnedAt40 = false;
+    }
+    if (this.survival.fatigue <= 20 && this.survival.fatigue > 0 && !this.fatigueWarnedAt20) {
+      this.fatigueWarnedAt20 = true;
+      this.showNotificationPopup('😵 극도로 피곤합니다!', '#ff8844');
+    } else if (this.survival.fatigue > 20) {
+      this.fatigueWarnedAt20 = false;
+    }
+
+    // 수면 중 허기 0 → 강제 기상
+    if (this.sleepSystem.isSleeping() && this.survival.hunger === 0) {
+      this.sleepSystem.interruptByStarving();
+    }
     this.weather.update(delta);
     this.invasion.update(delta);
     this.dropSystem.update(delta, this.player.sprite.x, this.player.sprite.y, this.inventory);
@@ -815,13 +875,6 @@ export class GameScene extends Phaser.Scene {
       this.frenzyDamageTimer = 0;
       this.frenzyAura?.setVisible(false);
     }
-
-    // 수면 완료 감지 → action 회복
-    const nowForcedSleep = this.survival.isForcedSleep;
-    if (this.prevForcedSleep && !nowForcedSleep) {
-      this.actionSystem.onActionDone('sleep', this.survival);
-    }
-    this.prevForcedSleep = nowForcedSleep;
 
     // 행복 수치 경고
     this.actionSystem.checkWarnings(this.survival.action, (msg, color) => {
@@ -939,9 +992,10 @@ export class GameScene extends Phaser.Scene {
       || (lockTarget !== null && this.combat.tracking)
       || this.buildAutoMoveTarget !== null
       || this.mapTransition?.isTransitioning
-      || this.isRepairing;
+      || this.isRepairing
+      || this.sleepSystem.isSleeping();
 
-    this.player.update(delta, suppressKeys);
+    this.player.update(delta, suppressKeys, this.survival.fatigueSpeedMult);
     this.interaction.update(delta);
 
     // ── 깊이 정렬: Y 좌표 기반으로 캐릭터가 나무 뒤/앞에 표시되도록 ───
@@ -956,6 +1010,8 @@ export class GameScene extends Phaser.Scene {
       this.buildAutoMoveTarget = null;
       this.pendingBuild = null;
       this.buildSystem.cancelBuild();
+      // 수면 중 피격 → 강제 기상
+      this.sleepSystem.interruptByHit();
     });
 
     // ── 나무 재생 ──────────────────────────────────────────
@@ -1093,6 +1149,7 @@ export class GameScene extends Phaser.Scene {
     this.playerListPanel?.destroy();
     this.miniMap?.destroy();
     this.hoverTooltip?.destroy();
+    this.sleepOverlay?.destroy();
     void this.multiplayerSys?.leaveRoom();
     this.interaction?.destroy();
     this.animalMgr?.destroyAll();
@@ -1808,6 +1865,62 @@ export class GameScene extends Phaser.Scene {
       if (!dmgResult.alive) {
         this.destroyStructure(closestStruct.tileX, closestStruct.tileY, '광란에 의해 파괴되었습니다');
       }
+    }
+  }
+
+  private tryStartSleep(material: 'wood' | 'stone', tileX: number, tileY: number): void {
+    if (this.survival.isFrenzy) {
+      this.showNotificationPopup('광란 상태에서는 잘 수 없습니다', '#ff8844');
+      return;
+    }
+    if (this.combat.getLockedTarget()) {
+      this.showNotificationPopup('전투 중에는 잘 수 없습니다', '#ff8844');
+      return;
+    }
+    if (this.survival.fatigue >= 70) {
+      this.showNotificationPopup('충분히 쉬었습니다', '#aaffaa');
+      return;
+    }
+    if (this.survival.hunger === 0) {
+      this.showNotificationPopup('배가 너무 고파 잠들 수 없습니다', '#ffaa44');
+      return;
+    }
+
+    const bedType = material === 'wood'
+      ? ('bed_wood' as const)
+      : ('bed_stone' as const);
+    const isIndoor = this.getRoofedTiles().has(`${tileX},${tileY}`);
+
+    const ok = this.sleepSystem.startSleep(bedType, isIndoor, (reason) => this.onWake(reason));
+    if (ok) {
+      // 누운 자세 (90도 회전)
+      this.player.sprite.setAngle(90);
+      this.sleepOverlay.show(this.survival, this.gameTime, () => {
+        this.sleepSystem.wakeUp('user');
+      });
+    }
+  }
+
+  private onWake(reason: import('../systems/SleepSystem').WakeReason): void {
+    this.sleepOverlay.hide();
+    // Restore isForcedSleep to false
+    this.survival.isForcedSleep = false;
+    // Restore player sprite from sleeping rotation
+    this.player.sprite.setAngle(0);
+
+    const msgs: Record<string, [string, string]> = {
+      recovered: ['☀ 기상!', '#ffee44'],
+      morning:   ['☀ 아침이 되었습니다', '#ffee44'],
+      attacked:  ['공격을 받아 잠에서 깼습니다!', '#ff6644'],
+      starving:  ['배고파서 잠에서 깼습니다!', '#ffaa44'],
+      user:      ['기상했습니다', '#aaffaa'],
+    };
+    const [msg, color] = msgs[reason] ?? ['기상', '#aaaaaa'];
+    this.showNotificationPopup(msg, color);
+
+    if (reason === 'recovered' || reason === 'morning') {
+      this.actionSystem.onActionDone('sleep', this.survival);
+      if (!this.isMultiplayer) this.saveSystem.saveAuto(this.collectSaveData());
     }
   }
 

@@ -38,13 +38,9 @@ export class SurvivalStats {
     this.maxHp = Math.max(1, Math.round(this.stats.maxHp - this.hungerDebuff));
     this.hp = Math.min(this.hp, this.maxHp);
 
-    // Fatigue → forced sleep
+    // Fatigue → forced sleep (SleepSystem handles recovery; isForcedSleep is set externally)
     if (this.fatigue === 0 && !this.isForcedSleep && !this.isFrenzy) {
       this.isForcedSleep = true;
-    }
-    if (this.isForcedSleep) {
-      this.fatigue = Math.min(100, this.fatigue + realSec * 2);
-      if (this.fatigue >= 30) this.isForcedSleep = false;
     }
 
     // 광란 쿨다운 처리
@@ -71,5 +67,15 @@ export class SurvivalStats {
   addAction(amount: number) { this.action = Math.min(100, this.action + amount); }
   eat(amount: number)        { this.hunger = Math.min(100, this.hunger + amount); }
   sleep(amount: number)      { this.fatigue = Math.min(100, this.fatigue + amount); }
+
+  /** 활동별 피로 소모 (CON 보정 적용) */
+  addFatigue(amount: number): void {
+    const conMult = Math.max(0.5, 1.0 - (this.stats.con - 5) * 0.06);
+    this.fatigue = Math.max(0, this.fatigue - amount * conMult);
+  }
+
+  /** 피로 10 이하 → 이동 속도 0.8배 */
+  get fatigueSpeedMult(): number { return this.fatigue <= 10 ? 0.8 : 1.0; }
+
   get isIncapacitated(): boolean { return this.isForcedSleep || this.isFrenzy; }
 }
