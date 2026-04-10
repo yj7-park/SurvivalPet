@@ -7,6 +7,9 @@ export class GameTime {
 
   update(delta: number) { this.elapsed += delta; }
 
+  getElapsed(): number { return this.elapsed; }
+  setElapsed(ms: number): void { this.elapsed = ms; }
+
   get totalGameSeconds(): number {
     return this.START_OFFSET_SECONDS + (this.elapsed / GameTime.MS_PER_GAME_DAY) * 86400;
   }

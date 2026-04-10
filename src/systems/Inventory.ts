@@ -41,4 +41,15 @@ export class Inventory {
   getAll(): ItemStack[] {
     return Array.from(this.items.entries()).map(([key, count]) => ({ key, count }));
   }
+
+  getSaveData(): Array<{ itemId: string; amount: number }> {
+    return Array.from(this.items.entries()).map(([itemId, amount]) => ({ itemId, amount }));
+  }
+
+  restore(slots: Array<{ itemId: string; amount: number } | null>): void {
+    this.items.clear();
+    for (const slot of slots) {
+      if (slot) this.items.set(slot.itemId, slot.amount);
+    }
+  }
 }

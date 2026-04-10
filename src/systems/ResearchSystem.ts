@@ -88,6 +88,8 @@ export class ResearchSystem {
   }
 
   isCompleted(id: string): boolean { return this.completed.has(id); }
+  getCompletedIds(): string[] { return Array.from(this.completed); }
+  restoreCompleted(ids: string[]): void { this.completed = new Set(ids); }
   isInProgress(): boolean { return this.current !== null; }
   getCurrentDef(): ResearchDef | null { return this.current?.def ?? null; }
   getElapsed(): number { return this.elapsed; }

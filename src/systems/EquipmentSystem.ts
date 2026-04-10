@@ -62,6 +62,10 @@ export class EquipmentSystem {
     return { ...this.slots };
   }
 
+  restoreSlots(slots: { armor: string | null; shield: string | null }): void {
+    this.slots = { ...slots };
+  }
+
   get totalDefense(): number {
     const armorDef  = ARMOR_DEFS[this.slots.armor   ?? '']?.defense ?? 0;
     const shieldDef = SHIELD_DEFS[this.slots.shield ?? '']?.defense ?? 0;

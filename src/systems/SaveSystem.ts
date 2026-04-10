@@ -1,0 +1,150 @@
+import { ProficiencyType } from './ProficiencySystem';
+
+export const SAVE_VERSION = 1;
+
+export interface InventorySaveData {
+  slots: Array<{ itemId: string; amount: number } | null>;
+}
+
+export interface CharacterSaveData {
+  mapX: number;
+  mapY: number;
+  x: number;
+  y: number;
+  stats: { str: number; agi: number; con: number; int: number };
+  hp: number;
+  hunger: number;
+  fatigue: number;
+  action: number;
+  inventory: InventorySaveData;
+  equipment: {
+    weapon: string | null;
+    armor: string | null;
+    shield: string | null;
+  };
+  proficiency: Record<ProficiencyType, { level: number; xp: number; totalXp: number }>;
+  unlockedResearch: string[];
+  knownRecipes: string[];
+}
+
+export interface BuildingSaveEntry {
+  type: string;
+  tileX: number;
+  tileY: number;
+  durability: number;
+  material: 'wood' | 'stone';
+}
+
+export interface WorldSaveData {
+  buildings: BuildingSaveEntry[];
+  clearedTrees: Array<{ tileX: number; tileY: number }>;
+  clearedRocks: Array<{ tileX: number; tileY: number }>;
+  gameTime: {
+    day: number;
+    timeOfDay: number;
+    realElapsedMs: number;
+  };
+}
+
+export interface SettingsSaveData {
+  autoPickup: boolean;
+  masterVolume: number;
+}
+
+export interface SaveData {
+  version: number;
+  savedAt: number;
+  playtime: number;
+  seed: string;
+  character: CharacterSaveData;
+  world: WorldSaveData;
+  settings: SettingsSaveData;
+}
+
+export interface SlotMeta {
+  slot: number;
+  occupied: boolean;
+  savedAt: number;
+  playtime: number;
+  seed: string;
+  day: number;
+}
+
+export type SaveResult = { ok: true } | { ok: false; reason: string };
+
+export class SaveSystem {
+  private lastUsedSlot = 0;
+  private readonly SLOT_KEYS = ['sv_slot_0', 'sv_slot_1', 'sv_slot_2'] as const;
+  private readonly META_PREFIX = 'sv_meta_';
+
+  save(slot: number, data: SaveData): SaveResult {
+    try {
+      const json = JSON.stringify(data);
+      localStorage.setItem(this.SLOT_KEYS[slot], json);
+      this.lastUsedSlot = slot;
+      this.updateMeta(slot, data);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, reason: String(e) };
+    }
+  }
+
+  saveAuto(data: SaveData): SaveResult {
+    return this.save(this.lastUsedSlot, data);
+  }
+
+  load(slot: number): SaveData | null {
+    try {
+      const json = localStorage.getItem(this.SLOT_KEYS[slot]);
+      if (!json) return null;
+      return this.migrate(JSON.parse(json));
+    } catch {
+      return null;
+    }
+  }
+
+  hasSave(slot: number): boolean {
+    return localStorage.getItem(this.SLOT_KEYS[slot]) !== null;
+  }
+
+  getSlotMeta(): SlotMeta[] {
+    return [0, 1, 2].map(i => {
+      const raw = localStorage.getItem(this.META_PREFIX + i);
+      if (raw) {
+        try { return JSON.parse(raw) as SlotMeta; } catch { /* fall through */ }
+      }
+      return { slot: i, occupied: false, savedAt: 0, playtime: 0, seed: '', day: 0 };
+    });
+  }
+
+  deleteSave(slot: number): void {
+    localStorage.removeItem(this.SLOT_KEYS[slot]);
+    localStorage.removeItem(this.META_PREFIX + slot);
+  }
+
+  setLastUsedSlot(slot: number): void { this.lastUsedSlot = slot; }
+  getLastUsedSlot(): number { return this.lastUsedSlot; }
+
+  private updateMeta(slot: number, data: SaveData): void {
+    const meta: SlotMeta = {
+      slot,
+      occupied: true,
+      savedAt: data.savedAt,
+      playtime: data.playtime,
+      seed: data.seed,
+      day: data.world.gameTime.day,
+    };
+    localStorage.setItem(this.META_PREFIX + slot, JSON.stringify(meta));
+  }
+
+  migrate(raw: unknown): SaveData {
+    const data = raw as { version?: number; character?: { proficiency?: unknown } };
+    if (!data.version || data.version < 1) {
+      if (data.character && !data.character.proficiency) {
+        data.character.proficiency = {};
+      }
+      (data as { version: number }).version = 1;
+    }
+    return data as SaveData;
+  }
+}

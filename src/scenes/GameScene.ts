@@ -26,6 +26,8 @@ import { ProficiencySystem, ProficiencyType, PROF_NAMES } from '../systems/Profi
 import { ResearchSystem, RESEARCH_DEFS } from '../systems/ResearchSystem';
 import { EquipmentSystem } from '../systems/EquipmentSystem';
 import { DropSystem } from '../systems/DropSystem';
+import { SaveSystem, SaveData } from '../systems/SaveSystem';
+import { PauseMenu } from '../ui/PauseMenu';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -96,6 +98,18 @@ export class GameScene extends Phaser.Scene {
   private shelfStorages = new Map<string, ShelfStorage>();
   private shelfUI!: ShelfUI;
 
+  // 저장/불러오기
+  private saveSystem = new SaveSystem();
+  private pauseMenu!: PauseMenu;
+  private pendingSaveData: SaveData | null = null;
+  private playtimeMs = 0;
+  private autoSaveTimer = 0;
+  private readonly AUTO_SAVE_INTERVAL_MS = 5 * 60 * 1000;
+  private beforeUnloadHandler!: () => void;
+
+  // 채굴된 암반 추적
+  private clearedRocks: { tx: number; ty: number }[] = [];
+
   // 건설 자동이동
   private buildAutoMoveTarget: { worldX: number; worldY: number } | null = null;
   private pendingBuild: { defName: string; material: StructMaterial; tileX: number; tileY: number } | null = null;
@@ -119,7 +133,22 @@ export class GameScene extends Phaser.Scene {
 
   constructor() { super({ key: 'GameScene' }); }
 
-  init(data: { seed: string }) { this.seed = data.seed; }
+  init(data: { seed: string; saveData?: SaveData }) {
+    this.seed = data.seed;
+    this.pendingSaveData = data.saveData ?? null;
+    if (data.saveData) {
+      this.mapX = data.saveData.character.mapX;
+      this.mapY = data.saveData.character.mapY;
+      this.playtimeMs = data.saveData.playtime;
+    } else {
+      this.mapX = 0;
+      this.mapY = 0;
+      this.playtimeMs = 0;
+    }
+    this.autoSaveTimer = 0;
+    this.clearedTrees = [];
+    this.clearedRocks = [];
+  }
 
   create() {
     registerTextures(this);
@@ -131,10 +160,11 @@ export class GameScene extends Phaser.Scene {
     this.weather = new WeatherSystem(this, this.gameTime, this.seed);
 
     this.mapGenerator = new MapGenerator(this.seed);
-    const firstMap = this.mapGenerator.generateMap(0, 0);
+    const startMx = this.mapX, startMy = this.mapY;
+    const firstMap = this.mapGenerator.generateMap(startMx, startMy);
     this.currentTiles = firstMap.tiles;
-    this.preloadedMaps.set('0,0', firstMap);
-    this.loadMap(0, 0);
+    this.preloadedMaps.set(`${startMx},${startMy}`, firstMap);
+    this.loadMap(startMx, startMy);
 
     const start = this.findStartTile(this.currentTiles);
     this.player = new Player(this, start.x, start.y, this.charStats);
@@ -470,15 +500,53 @@ export class GameScene extends Phaser.Scene {
       this.interaction.cancelOnMove();
       this.combat.unlock();
       this.commandQueue.clearAll();
+      // 아무것도 열려있지 않으면 일시정지 메뉴 토글
+      this.pauseMenu?.toggle();
     });
 
     // Launch UI scene (zoom-independent HUD)
     this.scene.launch('UIScene');
 
+    // PauseMenu
+    this.pauseMenu = new PauseMenu(
+      this.saveSystem,
+      () => this.collectSaveData(),
+      (saveData) => {
+        this.scene.stop('UIScene');
+        this.scene.restart({ seed: saveData.seed, saveData });
+      },
+      () => {
+        this.scene.stop('UIScene');
+        this.scene.start('MainMenuScene');
+      },
+    );
+
+    // beforeunload 자동 저장
+    this.beforeUnloadHandler = () => {
+      this.saveSystem.saveAuto(this.collectSaveData());
+    };
+    window.addEventListener('beforeunload', this.beforeUnloadHandler);
+
     this.preloadAdjacentMaps();
+
+    // 불러오기 복원
+    if (this.pendingSaveData) {
+      this.restoreFromSaveData(this.pendingSaveData);
+      this.pendingSaveData = null;
+    }
   }
 
   update(time: number, delta: number) {
+    this.playtimeMs += delta;
+
+    // 자동 저장 (5분마다)
+    this.autoSaveTimer += delta;
+    if (this.autoSaveTimer >= this.AUTO_SAVE_INTERVAL_MS) {
+      this.autoSaveTimer = 0;
+      const result = this.saveSystem.saveAuto(this.collectSaveData());
+      this.showNotificationPopup(result.ok ? '💾 자동 저장됨' : '⚠ 자동 저장 실패', result.ok ? '#ffffff' : '#ffaa44');
+    }
+
     this.gameTime.update(delta);
     this.survival.update(delta);
     this.weather.update(delta);
@@ -783,6 +851,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   shutdown() {
+    window.removeEventListener('beforeunload', this.beforeUnloadHandler);
+    this.pauseMenu?.close();
     this.scene.stop('UIScene');
     this.multiplayer.destroy();
     this.interaction?.destroy();
@@ -818,6 +888,8 @@ export class GameScene extends Phaser.Scene {
     // clear other player sprites on map change
     this.otherPlayerSprites.forEach(s => s.destroy());
     this.otherPlayerSprites.clear();
+    this.clearedTrees = [];
+    this.clearedRocks = [];
 
     this.interaction?.setTiles(this.currentTiles);
     this.animalMgr?.spawnForMap(this.seed, mx, my, this.currentTiles, this, new Set());
@@ -838,10 +910,11 @@ export class GameScene extends Phaser.Scene {
     // Track cleared trees for regeneration
     if (originalType === TileType.Tree) {
       this.clearedTrees.push({ tx, ty });
-      // Remove tree sprite
       const key = `${tx},${ty}`;
       this.treeSprites.get(key)?.destroy();
       this.treeSprites.delete(key);
+    } else if (originalType === TileType.Rock) {
+      this.clearedRocks.push({ tx, ty });
     }
 
     // 해당 타일 지면을 dirt로 다시 그림
@@ -1417,6 +1490,107 @@ export class GameScene extends Phaser.Scene {
       popup.style.opacity = '0';
       setTimeout(() => popup.remove(), 1500);
     }, 200);
+  }
+
+  // ── 저장 / 불러오기 ──────────────────────────────────────────────────────────
+
+  collectSaveData(): SaveData {
+    const slots = this.equipmentSystem.getSlots();
+    return {
+      version: 1,
+      savedAt: Date.now(),
+      playtime: this.playtimeMs,
+      seed: this.seed,
+      character: {
+        mapX: this.mapX,
+        mapY: this.mapY,
+        x: this.player.sprite.x,
+        y: this.player.sprite.y,
+        stats: {
+          str: this.charStats.str,
+          agi: this.charStats.agi,
+          con: this.charStats.con,
+          int: this.charStats.int,
+        },
+        hp: this.survival.hp,
+        hunger: this.survival.hunger,
+        fatigue: this.survival.fatigue,
+        action: this.survival.action,
+        inventory: { slots: this.inventory.getSaveData() },
+        equipment: { weapon: null, armor: slots.armor, shield: slots.shield },
+        proficiency: this.proficiency.serialize(),
+        unlockedResearch: [
+          ...this.research.getCompletedIds(),
+          ...this.proficiency.getUnlockedByResearch(),
+        ].filter((v, i, a) => a.indexOf(v) === i),
+        knownRecipes: [],
+      },
+      world: {
+        buildings: this.buildSystem.getAllStructures().map(s => ({
+          type: s.defName,
+          tileX: s.tileX,
+          tileY: s.tileY,
+          durability: s.durability,
+          material: s.material,
+        })),
+        clearedTrees: [...this.clearedTrees].map(({ tx, ty }) => ({ tileX: tx, tileY: ty })),
+        clearedRocks: [...this.clearedRocks].map(({ tx, ty }) => ({ tileX: tx, tileY: ty })),
+        gameTime: {
+          day: this.gameTime.day,
+          timeOfDay: this.gameTime.totalGameSeconds % 86400,
+          realElapsedMs: this.gameTime.getElapsed(),
+        },
+      },
+      settings: { autoPickup: true, masterVolume: 1.0 },
+    };
+  }
+
+  private restoreFromSaveData(saveData: SaveData): void {
+    const ch = saveData.character;
+
+    // 위치 복원
+    this.player.sprite.setPosition(ch.x, ch.y);
+
+    // 생존 수치 복원
+    this.survival.hp = ch.hp;
+    this.survival.hunger = ch.hunger;
+    this.survival.fatigue = ch.fatigue;
+    this.survival.action = ch.action;
+
+    // 인벤토리 복원
+    this.inventory.restore(ch.inventory.slots);
+
+    // 장비 복원 (인벤토리 조작 없이 직접 슬롯 설정)
+    this.equipmentSystem.restoreSlots({ armor: ch.equipment.armor, shield: ch.equipment.shield });
+
+    // 숙련도 복원
+    this.proficiency.restoreFrom(ch.proficiency);
+    this.proficiency.restoreUnlockedByResearch(ch.unlockedResearch);
+
+    // 연구 완료 목록 복원
+    this.research.restoreCompleted(ch.unlockedResearch);
+
+    // 게임 시간 복원
+    this.gameTime.setElapsed(saveData.world.gameTime.realElapsedMs);
+
+    // 채굴된 암반 복원
+    for (const r of saveData.world.clearedRocks) {
+      if (this.currentTiles[r.tileY]?.[r.tileX] !== TileType.Dirt) {
+        this.clearTile(r.tileX, r.tileY);
+      }
+    }
+
+    // 벌목된 나무 복원
+    for (const t of saveData.world.clearedTrees) {
+      if (this.currentTiles[t.tileY]?.[t.tileX] !== TileType.Dirt) {
+        this.clearTile(t.tileX, t.tileY);
+      }
+    }
+
+    // 건설물 복원
+    for (const b of saveData.world.buildings) {
+      this.buildSystem.forceRestoreStructure(b.type, b.material, b.tileX, b.tileY, b.durability);
+    }
   }
 
   // ── isNearTable ──────────────────────────────────────────────────────────────

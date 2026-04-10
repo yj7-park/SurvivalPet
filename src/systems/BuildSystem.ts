@@ -437,4 +437,25 @@ export class BuildSystem {
   getAllStructures(): PlacedStructure[] { return [...this.structures.values()]; }
   /** 부분 건축 목록 반환 */
   getAllPartialBuilds(): PartialBuild[] { return [...this.partialBuilds.values()]; }
+
+  /** 저장 데이터에서 구조물 즉시 복원 (건설 진행 없이) */
+  forceRestoreStructure(
+    defName: string,
+    material: 'wood' | 'stone',
+    tileX: number,
+    tileY: number,
+    durability: number,
+  ): void {
+    const def = STRUCTURE_DEFS[defName];
+    if (!def) return;
+    const wx = tileX * TILE_SIZE + TILE_SIZE / 2;
+    const wy = tileY * TILE_SIZE + TILE_SIZE / 2;
+    const sprite = this.scene.add.sprite(wx, wy, `struct_${defName}_${material}`).setDepth(1);
+    const maxDur = material === 'wood' ? def.woodDurability : def.stoneDurability;
+    const id = this.tileKey(tileX, tileY);
+    this.structures.set(id, {
+      id, defName, material, tileX, tileY,
+      durability, maxDurability: maxDur, sprite,
+    });
+  }
 }

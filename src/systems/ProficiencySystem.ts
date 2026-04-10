@@ -89,4 +89,28 @@ export class ProficiencySystem {
   isUnlockedByResearch(id: string): boolean {
     return this.unlockedByResearch.has(id);
   }
+
+  serialize(): Record<ProficiencyType, { level: number; xp: number; totalXp: number }> {
+    const result = {} as Record<ProficiencyType, { level: number; xp: number; totalXp: number }>;
+    for (const [type, data] of this.data.entries()) {
+      result[type as ProficiencyType] = { ...data };
+    }
+    return result;
+  }
+
+  restoreFrom(saved: Record<string, { level: number; xp: number; totalXp: number }>): void {
+    for (const [type, data] of Object.entries(saved)) {
+      if (this.data.has(type as ProficiencyType)) {
+        this.data.set(type as ProficiencyType, { ...data });
+      }
+    }
+  }
+
+  getUnlockedByResearch(): string[] {
+    return Array.from(this.unlockedByResearch);
+  }
+
+  restoreUnlockedByResearch(ids: string[]): void {
+    this.unlockedByResearch = new Set(ids);
+  }
 }

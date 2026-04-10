@@ -1,9 +1,12 @@
 import Phaser from 'phaser';
 import { generateSeed } from '../utils/seedRandom';
+import { SaveSystem, SaveData } from '../systems/SaveSystem';
+import { openLoadSlotPanel } from '../ui/PauseMenu';
 
 export class MainMenuScene extends Phaser.Scene {
   private seedInput!: HTMLInputElement;
   private overlay!: HTMLDivElement;
+  private saveSystem = new SaveSystem();
 
   constructor() {
     super({ key: 'MainMenuScene' });
@@ -69,8 +72,24 @@ export class MainMenuScene extends Phaser.Scene {
       this.startGame(seed);
     });
 
+    // 불러오기 버튼
+    const loadBtn = this.createButton('불러오기', '#2a3a6e', () => {
+      openLoadSlotPanel(this.saveSystem, (saveData: SaveData) => {
+        this.overlay.remove();
+        this.scene.start('GameScene', { seed: saveData.seed, saveData });
+      });
+    });
+    // 저장 슬롯이 하나도 없으면 회색 처리
+    const hasSaves = this.saveSystem.getSlotMeta().some(m => m.occupied);
+    if (!hasSaves) {
+      loadBtn.style.opacity = '0.4';
+      loadBtn.style.cursor = 'default';
+      loadBtn.onclick = null;
+    }
+
     this.overlay.appendChild(newGameBtn);
     this.overlay.appendChild(joinBtn);
+    this.overlay.appendChild(loadBtn);
     document.body.appendChild(this.overlay);
 
     this.events.once('shutdown', () => this.overlay.remove());
