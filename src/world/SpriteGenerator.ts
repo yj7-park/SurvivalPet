@@ -1108,6 +1108,30 @@ function drawCrackOverlay(level: 1 | 2 | 3): HTMLCanvasElement {
   return c;
 }
 
+function drawSeedling(): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = TILE; c.height = TILE;
+  const ctx = c.getContext('2d')!;
+  // Small green sprout: stem and two tiny leaves
+  ctx.strokeStyle = '#4a8a30';
+  ctx.lineWidth = 1;
+  // Stem
+  ctx.beginPath();
+  ctx.moveTo(8, 14);
+  ctx.lineTo(8, 8);
+  ctx.stroke();
+  // Left leaf
+  ctx.fillStyle = '#6abf45';
+  ctx.beginPath();
+  ctx.ellipse(5, 9, 3, 2, -0.5, 0, Math.PI * 2);
+  ctx.fill();
+  // Right leaf
+  ctx.beginPath();
+  ctx.ellipse(11, 9, 3, 2, 0.5, 0, Math.PI * 2);
+  ctx.fill();
+  return c;
+}
+
 export function registerTextures(scene: Phaser.Scene): void {
   if (scene.textures.exists('tile_dirt')) return;
 
@@ -1200,4 +1224,7 @@ export function registerTextures(scene: Phaser.Scene): void {
   scene.textures.addCanvas('crack_1', drawCrackOverlay(1));
   scene.textures.addCanvas('crack_2', drawCrackOverlay(2));
   scene.textures.addCanvas('crack_3', drawCrackOverlay(3));
+
+  // Seedling (tree regrowth animation)
+  scene.textures.addCanvas('seedling', drawSeedling());
 }

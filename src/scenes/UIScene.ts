@@ -15,6 +15,7 @@ type GameSceneRef = {
   multiplayerSys: import('../systems/MultiplayerSystem').MultiplayerSystem;
   hungerSystem: import('../systems/HungerSystem').HungerSystem;
   soundSystem: import('../systems/SoundSystem').SoundSystem;
+  sitSystem: import('../systems/SitSystem').SitSystem;
   isMultiplayer: boolean;
   seed: string;
   mapX: number;
@@ -43,6 +44,7 @@ export class UIScene extends Phaser.Scene {
   private hudInventoryText!: Phaser.GameObjects.Text;
   private hudPlayerCount!: Phaser.GameObjects.Text;
   private hudPoisonIcon!: Phaser.GameObjects.Text;
+  private hudSitStatus!: Phaser.GameObjects.Text;
   private prevFrenzy = false;
 
   constructor() { super({ key: 'UIScene' }); }
@@ -106,6 +108,12 @@ export class UIScene extends Phaser.Scene {
     this.hudPoisonIcon = this.add.text(W - 16, by0 + 14, '🤢', {
       fontSize: '11px', fontFamily: 'monospace',
     }).setDepth(102).setOrigin(1, 0.5).setVisible(false);
+
+    // 앉기 상태 아이콘 (우하단)
+    this.hudSitStatus = this.add.text(W - 8, H - 8, '🪑 휴식 중  피로 +0.2/분', {
+      fontSize: '10px', color: '#aabbcc', fontFamily: 'monospace',
+      backgroundColor: '#00000088', padding: { x: 5, y: 2 },
+    }).setDepth(100).setOrigin(1, 1).setVisible(false);
 
     // ── 좌하단: 캐릭터 스탯 + 인벤토리 요약 ─────────────────
     this.hudCharStats = this.add.text(8, H - 20, '', {
@@ -259,6 +267,9 @@ export class UIScene extends Phaser.Scene {
     } else {
       this.hudPlayerCount.setVisible(false);
     }
+
+    // 앉기 상태 아이콘
+    this.hudSitStatus.setVisible(gs.sitSystem?.isSitting() ?? false);
 
     // 인벤토리 UI 업데이트 (무기 HUD 포함)
     this.inventoryUI.update();

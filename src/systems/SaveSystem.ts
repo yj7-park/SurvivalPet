@@ -41,7 +41,7 @@ export interface BuildingSaveEntry {
 
 export interface WorldSaveData {
   buildings: BuildingSaveEntry[];
-  clearedTrees: Array<{ tileX: number; tileY: number }>;
+  clearedTrees: Array<{ tileX: number; tileY: number; regrowAt?: number }>;
   clearedRocks: Array<{ tileX: number; tileY: number }>;
   gameTime: {
     day: number;

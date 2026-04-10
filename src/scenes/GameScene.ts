@@ -41,6 +41,7 @@ import { HungerSystem } from '../systems/HungerSystem';
 import { HPSystem } from '../systems/HPSystem';
 import { DeathScreen } from '../ui/DeathScreen';
 import { SoundSystem } from '../systems/SoundSystem';
+import { SitSystem } from '../systems/SitSystem';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -178,10 +179,13 @@ export class GameScene extends Phaser.Scene {
   private pendingGroundPickup: string | null = null; // ground item id to pick up on arrival
 
   // Tree regeneration
-  private clearedTrees: { tx: number; ty: number }[] = [];
-  private treeRegenTimer = 0;
-  private readonly TREE_REGEN_CHECK_MS = 3 * 60 * 1000; // Check every 3 game hours (180 real sec)
-  private readonly TREE_REGEN_RATE = 0.3; // Probability to regrow one tree per check
+  private clearedTrees: { tx: number; ty: number; regrowAt: number }[] = [];
+  private readonly TREE_REGROW_MS = 10 * 60 * 1000; // 10 real minutes
+
+  // 의자 앉기 시스템
+  sitSystem = new SitSystem();
+  // 식탁 보너스 아이콘 (world-space)
+  private tableBonusText!: Phaser.GameObjects.Text;
 
   // Individual tree sprites for depth sorting
   private treeSprites = new Map<string, Phaser.GameObjects.Image>();
@@ -423,10 +427,11 @@ export class GameScene extends Phaser.Scene {
       this.soundSystem.play('enemy_die');
     });
 
-    // 피격 시 HPSystem 타이머 리셋
+    // 피격 시 HPSystem 타이머 리셋, 앉기 중단
     this.combat.setOnPlayerHitCallback((dmg) => {
       this.hpSystem.onHit();
       this.soundSystem.play('player_hit', { pitch: 0.9 + Math.random() * 0.2 });
+      if (this.sitSystem.isSitting()) this.sitSystem.stopSitting();
       void dmg;
     });
 
@@ -620,6 +625,25 @@ export class GameScene extends Phaser.Scene {
         }
         return;
       }
+      if (clickedStructure?.defName === 'chair') {
+        const chairWx = clickedStructure.tileX * TILE_SIZE + TILE_SIZE / 2;
+        const chairWy = clickedStructure.tileY * TILE_SIZE + TILE_SIZE / 2;
+        const chairDist = Math.hypot(this.player.sprite.x - chairWx, this.player.sprite.y - chairWy);
+        if (chairDist <= BUILD_RANGE) {
+          if (this.survival.isFrenzy) {
+            this.showNotificationPopup('광란 상태에서는 앉을 수 없습니다', '#ff8888');
+          } else if (this.survival.fatigue >= 95) {
+            this.showNotificationPopup('이미 충분히 쉬었습니다', '#aabbcc');
+          } else {
+            const chairType = `chair_${clickedStructure.material}`;
+            this.sitSystem.startSitting(chairType);
+            this.showNotificationPopup('🪑 휴식 중...', '#aabbcc');
+          }
+        } else {
+          this.moveTarget = { worldX: chairWx, worldY: chairWy };
+        }
+        return;
+      }
       if (clickedStructure?.defName === 'shelf') {
         const shelfId = clickedStructure.id;
         let shelfStorage = this.shelfStorages.get(shelfId);
@@ -688,6 +712,12 @@ export class GameScene extends Phaser.Scene {
       fontSize: '10px', color: '#aaddff', fontFamily: 'monospace',
       backgroundColor: '#00000066', padding: { x: 3, y: 1 },
     }).setDepth(10).setVisible(false);
+
+    // Table bonus text — world-space, shown above nearest table when player is near
+    this.tableBonusText = this.add.text(0, 0, '🍽 +30% 식사 효율', {
+      fontSize: '10px', color: '#ffe080', fontFamily: 'monospace',
+      backgroundColor: '#00000088', padding: { x: 3, y: 1 },
+    }).setDepth(200).setVisible(false).setOrigin(0.5, 1);
 
     // Zoom wheel
     this.input.on('wheel', (_: unknown, __: unknown, ___: unknown, deltaY: number) => {
@@ -1006,6 +1036,7 @@ export class GameScene extends Phaser.Scene {
       this.buildSystem.pauseBuild(); // 진행 상태 저장 (취소 X)
       this.moveTarget = null;
       this.moveTargetCommand = null;
+      if (this.sitSystem.isSitting()) this.sitSystem.stopSitting();
       this.pendingGroundPickup = null;
     }
 
@@ -1126,18 +1157,19 @@ export class GameScene extends Phaser.Scene {
     });
 
     // ── 나무 재생 ──────────────────────────────────────────
-    this.treeRegenTimer += delta;
-    if (this.treeRegenTimer >= this.TREE_REGEN_CHECK_MS && this.clearedTrees.length > 0) {
-      this.treeRegenTimer = 0;
-      // Try to regenerate one tree
-      const rng = new SeededRandom(`${this.seed}_regen_${this.gameTime.day}`);
-      if (rng.next() < this.TREE_REGEN_RATE) {
-        const idx = Math.floor(rng.next() * this.clearedTrees.length);
-        const { tx, ty } = this.clearedTrees[idx];
-        this.restoreTree(tx, ty);
-        this.clearedTrees.splice(idx, 1);
-      }
+    if (this.clearedTrees.length > 0) {
+      const now = Date.now();
+      this.clearedTrees = this.clearedTrees.filter(entry => {
+        if (now >= entry.regrowAt) {
+          this.restoreTreeWithAnimation(entry.tx, entry.ty);
+          return false;
+        }
+        return true;
+      });
     }
+
+    // ── SitSystem 업데이트 ────────────────────────────────
+    this.sitSystem.update(delta, this.survival);
 
     // Sleep text: world-space, follows player
     if (this.survival.isForcedSleep) {
@@ -1145,6 +1177,16 @@ export class GameScene extends Phaser.Scene {
         .setPosition(this.player.sprite.x - 12, this.player.sprite.y - 30);
     } else {
       this.sleepText.setVisible(false);
+    }
+
+    // ── 식탁 보너스 아이콘 ────────────────────────────────────
+    const nearTable = this.findNearbyTable();
+    if (nearTable) {
+      const tx = nearTable.tileX * TILE_SIZE + TILE_SIZE / 2;
+      const ty = nearTable.tileY * TILE_SIZE;
+      this.tableBonusText.setVisible(true).setPosition(tx, ty);
+    } else {
+      this.tableBonusText.setVisible(false);
     }
 
     this.mapTransition.check(this.player.sprite.x, this.player.sprite.y, this.mapX, this.mapY);
@@ -1313,6 +1355,23 @@ export class GameScene extends Phaser.Scene {
     this.addTreeSprite(tx, ty);
   }
 
+  private restoreTreeWithAnimation(tx: number, ty: number): void {
+    const wx = tx * TILE_SIZE;
+    const wy = ty * TILE_SIZE;
+    // Show seedling sprite, scale up, then replace with full tree
+    const seedling = this.add.image(wx, wy, 'seedling').setOrigin(0, 0).setDepth((ty + 1) * TILE_SIZE).setScale(0);
+    this.tweens.add({
+      targets: seedling,
+      scaleX: 1, scaleY: 1,
+      duration: 300,
+      ease: 'Back.easeOut',
+      onComplete: () => {
+        seedling.destroy();
+        this.restoreTree(tx, ty);
+      },
+    });
+  }
+
   /** 벌목/채굴 완료 후 타일 한 칸을 Dirt로 교체하고 RT 갱신 */
   private clearTile(tx: number, ty: number): void {
     const originalType = this.currentTiles[ty][tx];
@@ -1320,7 +1379,7 @@ export class GameScene extends Phaser.Scene {
 
     // Track cleared trees for regeneration
     if (originalType === TileType.Tree) {
-      this.clearedTrees.push({ tx, ty });
+      this.clearedTrees.push({ tx, ty, regrowAt: Date.now() + this.TREE_REGROW_MS });
       const key = `${tx},${ty}`;
       this.treeSprites.get(key)?.destroy();
       this.treeSprites.delete(key);
@@ -2108,7 +2167,7 @@ export class GameScene extends Phaser.Scene {
           durability: s.durability,
           material: s.material,
         })),
-        clearedTrees: [...this.clearedTrees].map(({ tx, ty }) => ({ tileX: tx, tileY: ty })),
+        clearedTrees: [...this.clearedTrees].map(({ tx, ty, regrowAt }) => ({ tileX: tx, tileY: ty, regrowAt })),
         clearedRocks: [...this.clearedRocks].map(({ tx, ty }) => ({ tileX: tx, tileY: ty })),
         visitedMaps: [...this.visitedMaps].map(k => k.split(',').map(Number) as [number, number]),
         killedEnemies: [
@@ -2178,10 +2237,21 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // 벌목된 나무 복원
+    // 벌목된 나무 복원 (regrowAt 경과 시 즉시 재생, 아직이면 cleared 상태 유지)
+    const now = Date.now();
     for (const t of saveData.world.clearedTrees) {
+      const regrowAt = t.regrowAt ?? (now + this.TREE_REGROW_MS);
+      if (now >= regrowAt) {
+        // regrowAt passed while offline — tree has regrown
+        continue; // tile stays as Tree (already initialized from mapData)
+      }
       if (this.currentTiles[t.tileY]?.[t.tileX] !== TileType.Dirt) {
-        this.clearTile(t.tileX, t.tileY);
+        this.currentTiles[t.tileY][t.tileX] = TileType.Dirt;
+        this.tileRT.draw('tile_dirt', t.tileX * TILE_SIZE, t.tileY * TILE_SIZE);
+        const key = `${t.tileX},${t.tileY}`;
+        this.treeSprites.get(key)?.destroy();
+        this.treeSprites.delete(key);
+        this.clearedTrees.push({ tx: t.tileX, ty: t.tileY, regrowAt });
       }
     }
 
@@ -2237,16 +2307,20 @@ export class GameScene extends Phaser.Scene {
   // ── isNearTable ──────────────────────────────────────────────────────────────
 
   isNearTable(): boolean {
+    return this.findNearbyTable() !== null;
+  }
+
+  private findNearbyTable(): import('../systems/BuildSystem').PlacedStructure | null {
     const px = this.player.sprite.x;
     const py = this.player.sprite.y;
     for (const struct of this.buildSystem.getAllStructures()) {
       if (struct.defName === 'table') {
         const wx = struct.tileX * TILE_SIZE + TILE_SIZE / 2;
         const wy = struct.tileY * TILE_SIZE + TILE_SIZE / 2;
-        if (Math.hypot(px - wx, py - wy) <= 48) return true;
+        if (Math.hypot(px - wx, py - wy) <= 48) return struct;
       }
     }
-    return false;
+    return null;
   }
 
   // ── Kitchen Panel ─────────────────────────────────────────────────────────────
