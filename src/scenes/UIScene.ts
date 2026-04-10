@@ -16,6 +16,7 @@ type GameSceneRef = {
   hungerSystem: import('../systems/HungerSystem').HungerSystem;
   soundSystem: import('../systems/SoundSystem').SoundSystem;
   sitSystem: import('../systems/SitSystem').SitSystem;
+  tutorialSystem: import('../systems/TutorialSystem').TutorialSystem;
   isMultiplayer: boolean;
   seed: string;
   mapX: number;
@@ -142,6 +143,10 @@ export class UIScene extends Phaser.Scene {
       () => this.inventoryUI.getEquippedWeaponId(),
       () => gs.proficiency.getLevel('combat'),
     );
+
+    // Tutorial event callbacks
+    this.inventoryUI.setOnOpen(() => gs.tutorialSystem?.onEvent('inventory_opened'));
+    this.inventoryUI.setOnEat(() => gs.tutorialSystem?.onEvent('food_eaten'));
 
     // V키: 인벤토리 토글
     this.input.keyboard!.on('keydown-V', () => this.inventoryUI.toggle());

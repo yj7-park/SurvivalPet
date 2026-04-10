@@ -89,6 +89,11 @@ export class InventoryUI {
   private proficiencySystem: ProficiencySystem | null = null;
 
   private hungerSystem: HungerSystem | null = null;
+  private onOpenCallback?: () => void;
+  private onEatCallback?: () => void;
+
+  setOnOpen(cb: () => void): void { this.onOpenCallback = cb; }
+  setOnEat(cb: () => void): void { this.onEatCallback = cb; }
 
   constructor(
     private scene: Phaser.Scene,
@@ -169,6 +174,7 @@ export class InventoryUI {
   // ── Panel ─────────────────────────────────────────────────────────────────────
 
   private open(): void {
+    this.onOpenCallback?.();
     const panel = document.createElement('div');
     panel.id = 'inventory-panel';
     panel.style.cssText = `
@@ -381,6 +387,7 @@ export class InventoryUI {
 
     if (this.hungerSystem) {
       const result = this.hungerSystem.eat(foodDef, this.survival, this.charStats, nearTable);
+      this.onEatCallback?.();
       if (result.diningBonus) this.showTableBonusPopup();
       if (result.poisoned) this.showNotice('🤢 식중독에 걸렸습니다!');
     } else {

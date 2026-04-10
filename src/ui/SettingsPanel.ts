@@ -157,6 +157,26 @@ export class SettingsPanel {
       { v: 'ko', l: '한국어' },
     ], settings.language));
 
+    // 튜토리얼 초기화 버튼
+    const tutRow = document.createElement('div');
+    tutRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #223';
+    const tutLbl = document.createElement('span');
+    tutLbl.textContent = '튜토리얼 다시 보기';
+    tutLbl.style.color = '#ccc';
+    const tutBtn = document.createElement('button');
+    tutBtn.textContent = '초기화';
+    tutBtn.style.cssText = `padding:4px 12px;border:1px solid #446;border-radius:12px;cursor:pointer;font:11px monospace;background:#333;color:#aaa;`;
+    tutBtn.onclick = () => {
+      localStorage.removeItem('sv_tutorial_done');
+      tutBtn.textContent = '완료!';
+      tutBtn.style.background = '#2a5a3a';
+      tutBtn.style.color = '#aff';
+      this.close();
+    };
+    tutRow.appendChild(tutLbl);
+    tutRow.appendChild(tutBtn);
+    overlay.appendChild(tutRow);
+
     overlay.querySelector('#sp-x')!.addEventListener('click', () => this.close());
 
     const closeOnOutside = (e: MouseEvent) => {

@@ -42,6 +42,8 @@ import { HPSystem } from '../systems/HPSystem';
 import { DeathScreen } from '../ui/DeathScreen';
 import { SoundSystem } from '../systems/SoundSystem';
 import { SitSystem } from '../systems/SitSystem';
+import { TutorialSystem } from '../systems/TutorialSystem';
+import { CheatsheetPanel } from '../ui/CheatsheetPanel';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -164,6 +166,10 @@ export class GameScene extends Phaser.Scene {
   soundSystem = new SoundSystem();
   private bgmUpdateTimer = 0;
   private readonly BGM_UPDATE_INTERVAL = 30_000; // 30초마다 BGM 갱신
+
+  // 튜토리얼 & 조작 가이드
+  tutorialSystem = new TutorialSystem();
+  private cheatsheetPanel = new CheatsheetPanel();
 
   // 행복 수치 & 광란
   private actionSystem = new ActionSystem();
@@ -333,6 +339,7 @@ export class GameScene extends Phaser.Scene {
       this.survival.addFatigue(5); // 건설 피로
       this.survival.hunger = Math.max(0, this.survival.hunger - 3); // 건설 허기
       this.buildingsBuilt++;
+      this.tutorialSystem.onEvent('building_built');
       this.soundSystem.play('build_done');
       this.commandQueue.completeCommand();
       this.processNextQueueCommand();
@@ -392,6 +399,7 @@ export class GameScene extends Phaser.Scene {
         woodcutting: 'woodcut_done', mining: 'mine_done', fishing: 'fish_success',
       };
       if (sfxMap[type]) this.soundSystem.play(sfxMap[type]);
+      if (type === 'fishing') this.tutorialSystem.onEvent('fish_completed');
     });
 
     // Spawn animals on current map
@@ -737,6 +745,9 @@ export class GameScene extends Phaser.Scene {
     // M key: toggle minimap
     this.input.keyboard!.on('keydown-M', () => this.miniMap.toggle());
 
+    // H key: toggle cheatsheet
+    this.input.keyboard!.on('keydown-H', () => this.cheatsheetPanel.toggle());
+
     // V key: toggle inventory (handled by UIScene keyboard listener)
 
     // ESC: exit build mode, cancel interaction, close panels, unlock target, clear queue
@@ -845,6 +856,11 @@ export class GameScene extends Phaser.Scene {
     this.input.keyboard!.on('keyup-TAB', () => {
       // Keep open until toggle
     });
+
+    // 신규 플레이어 튜토리얼
+    if (!TutorialSystem.isDone()) {
+      this.tutorialSystem.start(this.makeTutorialState());
+    }
   }
 
   update(time: number, delta: number) {
@@ -1187,6 +1203,11 @@ export class GameScene extends Phaser.Scene {
       this.tableBonusText.setVisible(true).setPosition(tx, ty);
     } else {
       this.tableBonusText.setVisible(false);
+    }
+
+    // ── 튜토리얼 업데이트 ─────────────────────────────────
+    if (this.tutorialSystem.isActive()) {
+      this.tutorialSystem.update(this.makeTutorialState());
     }
 
     this.mapTransition.check(this.player.sprite.x, this.player.sprite.y, this.mapX, this.mapY);
@@ -1776,6 +1797,7 @@ export class GameScene extends Phaser.Scene {
               this.inventory.add(`item_${weapon.id}`, 1);
               this.actionSystem.onActionDone('craft', this.survival);
               this.proficiency.addXP('crafting', 15);
+              this.tutorialSystem.onEvent('item_crafted');
               status.textContent = `${weapon.name} 제작 완료!`;
               this.refreshWorkbenchPanel(panel, activeTab);
             });
@@ -1810,6 +1832,7 @@ export class GameScene extends Phaser.Scene {
               this.inventory.add(recipe.output.itemId, recipe.output.amount);
               this.actionSystem.onActionDone('craft', this.survival);
               this.proficiency.addXP('crafting', 15);
+              this.tutorialSystem.onEvent('item_crafted');
               status.textContent = `${recipe.label} 완료!`;
               this.refreshWorkbenchPanel(panel, activeTab);
             });
@@ -2084,6 +2107,7 @@ export class GameScene extends Phaser.Scene {
     // 기상 시 HP 회복 (CON×3)
     this.hpSystem.onWakeUp(this.charStats, this.survival);
     this.soundSystem.play('wake_up');
+    this.tutorialSystem.onEvent('sleep_completed');
 
     const msgs: Record<string, [string, string]> = {
       recovered: ['☀ 기상!', '#ffee44'],
@@ -2542,5 +2566,45 @@ export class GameScene extends Phaser.Scene {
     this.kitchenPanel = null;
     // 요리가 진행 중이면 계속 진행 (패널 닫기 = 취소 아님)
     // cookingRecipe/timer는 유지됨
+  }
+
+  private findNearestTile(type: TileType): { wx: number; wy: number } | null {
+    const px = this.player.sprite.x;
+    const py = this.player.sprite.y;
+    let best: { wx: number; wy: number } | null = null;
+    let bestDist = Infinity;
+    const tiles = this.currentTiles;
+    for (let ty = 0; ty < tiles.length; ty++) {
+      for (let tx = 0; tx < tiles[ty].length; tx++) {
+        if (tiles[ty][tx] === type) {
+          const wx = tx * TILE_SIZE + TILE_SIZE / 2;
+          const wy = ty * TILE_SIZE + TILE_SIZE / 2;
+          const d = Math.hypot(px - wx, py - wy);
+          if (d < bestDist) { bestDist = d; best = { wx, wy }; }
+        }
+      }
+    }
+    return best;
+  }
+
+  // ── Tutorial State ────────────────────────────────────────────────────────────
+
+  private makeTutorialState(): import('../systems/TutorialSystem').TutorialGameState {
+    const cam = this.cameras.main;
+    return {
+      playerX: this.player.sprite.x,
+      playerY: this.player.sprite.y,
+      woodCount: this.inventory.get('item_wood'),
+      stoneCount: this.inventory.get('item_stone'),
+      buildingCount: this.buildingsBuilt,
+      worldToScreen: (wx, wy) => {
+        const sx = (wx - cam.worldView.x) * cam.zoom;
+        const sy = (wy - cam.worldView.y) * cam.zoom;
+        return { x: sx, y: sy };
+      },
+      nearestTree: () => this.findNearestTile(TileType.Tree),
+      nearestRock: () => this.findNearestTile(TileType.Rock),
+      nearestWater: () => this.findNearestTile(TileType.Water),
+    };
   }
 }
