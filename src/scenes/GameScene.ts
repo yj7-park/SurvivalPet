@@ -75,6 +75,8 @@ import { TransitionSystem } from '../systems/TransitionSystem';
 import { SeasonCard } from '../ui/SeasonCard';
 import { StarLayer } from '../rendering/StarLayer';
 import { PostFxSystem } from '../systems/PostFxSystem';
+import { MultiplayerVisualSystem } from '../systems/MultiplayerVisualSystem';
+import { EMOTE_COMMANDS } from '../systems/RespawnEffect';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -288,6 +290,7 @@ export class GameScene extends Phaser.Scene {
   private postFxSystem?: PostFxSystem;
 
   // Other players
+  private multiplayerVisual?: MultiplayerVisualSystem;
   private remotePlayerDisplays = new Map<string, {
     sprite: Phaser.GameObjects.Sprite;
     nameLabel: Phaser.GameObjects.Text;
@@ -355,6 +358,7 @@ export class GameScene extends Phaser.Scene {
       const savedSettings = this.saveSystem.loadSettings();
       this.postFxSystem.setShakeIntensity(savedSettings.screenShake ?? 1.0);
     }
+    this.multiplayerVisual = new MultiplayerVisualSystem(this, playerId);
 
     const startMx = this.mapX, startMy = this.mapY;
     const firstMap = this.mapGenerator.generateMap(startMx, startMy);
@@ -1349,14 +1353,24 @@ export class GameScene extends Phaser.Scene {
     this.chatSystem.onMessageReceived((msg) => {
       // 로컬 플레이어 외 플레이어 말풍선
       if (msg.type === 'user' && msg.playerId !== getOrCreatePlayerId()) {
-        const disp = this.remotePlayerDisplays.get(msg.playerId);
-        if (disp) {
-          this.chatBubbles.showBubble(msg.playerId, msg.text, disp.sprite.x, disp.sprite.y, disp.sprite.depth);
+        const spr = this.multiplayerVisual?.getSprite(msg.playerId);
+        if (spr) {
+          this.chatBubbles.showBubble(msg.playerId, msg.text, spr.x, spr.y, spr.depth);
         }
       }
       // 로컬 플레이어 말풍선
       if (msg.type === 'user' && msg.playerId === getOrCreatePlayerId()) {
         this.chatBubbles.showBubble(msg.playerId, msg.text, this.player.sprite.x, this.player.sprite.y, 2);
+      }
+      // 감정 표현 이모트 처리
+      if (msg.type === 'user') {
+        const emote = EMOTE_COMMANDS[msg.text?.trim()];
+        if (emote) {
+          const isLocal = msg.playerId === getOrCreatePlayerId();
+          const ex = isLocal ? this.player.sprite.x : (this.multiplayerVisual?.getSprite(msg.playerId)?.x ?? 0);
+          const ey = isLocal ? this.player.sprite.y : (this.multiplayerVisual?.getSprite(msg.playerId)?.y ?? 0);
+          if (ex || ey) this.multiplayerVisual?.respawnEffect.showEmote(ex, ey, emote);
+        }
       }
     });
 
@@ -2027,6 +2041,7 @@ export class GameScene extends Phaser.Scene {
     this.seasonCard?.destroy();
     this.starLayer?.destroy();
     this.postFxSystem?.destroy();
+    this.multiplayerVisual?.destroy();
     this.weather?.destroy();
     this.charRenderer?.destroy();
     this.logPanel?.close();
@@ -2055,7 +2070,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     // clear other player sprites on map change
-    this.remotePlayerDisplays.forEach(d => { d.sprite.destroy(); d.nameLabel.destroy(); d.statusLabel.destroy(); });
+    this.multiplayerVisual?.clearMap();
     this.remotePlayerDisplays.clear();
     this.clearedTrees = [];
     this.clearedRocks = [];
@@ -2204,49 +2219,7 @@ export class GameScene extends Phaser.Scene {
   // ── Multiplayer ──────────────────────────────────────────
 
   private updateOtherPlayers(players: RemotePlayerState[]) {
-    const seen = new Set<string>();
-    for (const p of players) {
-      if (p.mapX !== this.mapX || p.mapY !== this.mapY) continue;
-      seen.add(p.id);
-      let display = this.remotePlayerDisplays.get(p.id);
-      if (!display) {
-        const sprite = this.add.sprite(p.renderX, p.renderY, `char_skin${p.skin}`, 0)
-          .setDepth(2).setAlpha(0.85);
-        const nameLabel = this.add.text(p.renderX, p.renderY - 20, p.name, {
-          fontSize: '9px', color: '#fff', fontFamily: 'monospace',
-          stroke: '#000', strokeThickness: 2,
-        }).setDepth(3).setOrigin(0.5);
-        const statusLabel = this.add.text(p.renderX, p.renderY - 12, '', {
-          fontSize: '8px', color: '#aaa', fontFamily: 'monospace',
-        }).setDepth(3).setOrigin(0.5);
-        display = { sprite, nameLabel, statusLabel };
-        this.remotePlayerDisplays.set(p.id, display);
-      }
-      // Play walk/idle animation for remote player
-      {
-        const remDir = p.facing === 'right' ? 'left' : p.facing;
-        const animKey = p.isMoving
-          ? `walk_${p.skin}_${remDir}`
-          : `idle_${p.skin}_${remDir}`;
-        if (display.sprite.anims.currentAnim?.key !== animKey) {
-          display.sprite.play(animKey, true);
-        }
-        display.sprite.setFlipX(p.facing === 'right');
-        display.sprite.setTint(p.frenzy ? 0xff6666 : 0xffffff);
-      }
-      display.sprite.setPosition(p.renderX, p.renderY);
-      display.nameLabel.setPosition(p.renderX, p.renderY - 20).setText(p.name)
-        .setColor(p.frenzy ? '#ff6666' : '#fff');
-      display.statusLabel.setPosition(p.renderX, p.renderY - 12)
-        .setText(`❤${Math.ceil(p.hp)} 🍖${Math.ceil(p.hunger)}${p.frenzy ? ' ⚡' : ''}`);
-      this.chatBubbles?.updateBubblePosition(p.id, p.renderX, p.renderY);
-    }
-    this.remotePlayerDisplays.forEach((disp, id) => {
-      if (!seen.has(id)) {
-        disp.sprite.destroy(); disp.nameLabel.destroy(); disp.statusLabel.destroy();
-        this.remotePlayerDisplays.delete(id);
-      }
-    });
+    this.multiplayerVisual?.update(players, this.mapX, this.mapY, this.chatBubbles);
   }
 
   // ── Build Panel ───────────────────────────────────────────

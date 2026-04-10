@@ -13,13 +13,15 @@ export interface RemotePlayerState {
   x: number; y: number;
   renderX: number; renderY: number;
   mapX: number; mapY: number;
-  hp: number; hunger: number; fatigue: number;
+  hp: number; maxHp?: number; hunger: number; fatigue: number;
   facing: Direction;
   isMoving: boolean;
   weapon: string | null;
   frenzy: boolean;
   online: boolean;
   lastSeen: number;
+  playerColor?: number;
+  afkSeconds?: number;
 }
 
 export interface WorldBuildingEntry {
