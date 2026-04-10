@@ -132,10 +132,12 @@ export class InventoryUI {
   private hungerSystem: HungerSystem | null = null;
   private onOpenCallback?: () => void;
   private onEatCallback?: () => void;
+  private onEatFeedbackCb?: (hungerRecovered: number, hpChanged: number, poisoned: boolean) => void;
   private onToolUseCb?: (itemId: string) => void;
 
   setOnOpen(cb: () => void): void { this.onOpenCallback = cb; }
   setOnEat(cb: () => void): void { this.onEatCallback = cb; }
+  setOnEatFeedback(cb: (hungerRecovered: number, hpChanged: number, poisoned: boolean) => void): void { this.onEatFeedbackCb = cb; }
   setOnToolUse(cb: (itemId: string) => void): void { this.onToolUseCb = cb; }
 
   constructor(
@@ -441,6 +443,7 @@ export class InventoryUI {
     if (this.hungerSystem) {
       const result = this.hungerSystem.eat(foodDef, this.survival, this.charStats, nearTable);
       this.onEatCallback?.();
+      this.onEatFeedbackCb?.(result.hungerRecovered, result.hpChanged, result.poisoned);
       if (result.diningBonus) this.showTableBonusPopup();
       if (result.poisoned) this.showNotice('🤢 식중독에 걸렸습니다!');
     } else {

@@ -179,6 +179,21 @@ export class UIScene extends Phaser.Scene {
     // Tutorial event callbacks
     this.inventoryUI.setOnOpen(() => gs.tutorialSystem?.onEvent('inventory_opened'));
     this.inventoryUI.setOnEat(() => gs.tutorialSystem?.onEvent('food_eaten'));
+    // Eat visual feedback
+    this.inventoryUI.setOnEatFeedback((hunger, hp, poisoned) => {
+      const fullGs = this.scene.get('GameScene') as unknown as {
+        player: { sprite: { x: number; y: number } };
+        feedbackRenderer?: { playEatEffect: (x: number, y: number, h: number) => void; playHealEffect: (x: number, y: number, a: number) => void; playFoodPoisonEffect: (x: number, y: number) => void };
+      };
+      const px = fullGs.player?.sprite?.x ?? 0;
+      const py = fullGs.player?.sprite?.y ?? 0;
+      if (poisoned) {
+        fullGs.feedbackRenderer?.playFoodPoisonEffect(px, py);
+      } else {
+        if (hunger > 0) fullGs.feedbackRenderer?.playEatEffect(px, py, hunger);
+        if (hp > 0)     fullGs.feedbackRenderer?.playHealEffect(px, py, hp);
+      }
+    });
     // Tool/seed use callback → delegate to GameScene
     this.inventoryUI.setOnToolUse((itemId) => (gs as unknown as { handleToolUse: (id: string) => void }).handleToolUse?.(itemId));
 

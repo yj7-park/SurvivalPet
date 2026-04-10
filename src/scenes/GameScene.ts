@@ -67,6 +67,9 @@ import { TreeRenderer } from '../rendering/TreeRenderer';
 import { ObjectRenderer } from '../rendering/ObjectRenderer';
 import { CombatRenderer } from '../rendering/CombatRenderer';
 import { EnemyRenderer } from '../rendering/EnemyRenderer';
+import { BuildRenderer } from '../rendering/BuildRenderer';
+import { IndoorRenderer } from '../rendering/IndoorRenderer';
+import { FeedbackRenderer } from '../rendering/FeedbackRenderer';
 import { UI_COLORS, PANEL_CSS, BTN_CSS } from '../config/uiColors';
 import { TransitionSystem } from '../systems/TransitionSystem';
 import { SeasonCard } from '../ui/SeasonCard';
@@ -273,6 +276,9 @@ export class GameScene extends Phaser.Scene {
   private objectRenderer!: ObjectRenderer;
   private combatRenderer!: CombatRenderer;
   private enemyRenderer!: EnemyRenderer;
+  private buildRenderer!: BuildRenderer;
+  private indoorRenderer!: IndoorRenderer;
+  private feedbackRenderer!: FeedbackRenderer;
 
   // Transition & atmosphere
   private transitionSystem!: TransitionSystem;
@@ -339,6 +345,9 @@ export class GameScene extends Phaser.Scene {
     this.objectRenderer = new ObjectRenderer(this);
     this.combatRenderer = new CombatRenderer(this);
     this.enemyRenderer = new EnemyRenderer(this);
+    this.buildRenderer = new BuildRenderer(this);
+    this.indoorRenderer = new IndoorRenderer(this);
+    this.feedbackRenderer = new FeedbackRenderer(this);
 
     const startMx = this.mapX, startMy = this.mapY;
     const firstMap = this.mapGenerator.generateMap(startMx, startMy);
@@ -508,6 +517,14 @@ export class GameScene extends Phaser.Scene {
       this.buildingsBuilt++;
       this.tutorialSystem.onEvent('building_built');
       this.soundSystem.play('build_done');
+      // Build complete visual effect
+      const bwx = struct.tileX * TILE_SIZE + TILE_SIZE / 2;
+      const bwy = struct.tileY * TILE_SIZE + TILE_SIZE / 2;
+      this.buildRenderer?.playBuildCompleteEffect(bwx, bwy);
+      // Refresh indoor overlay if roof was built
+      if (struct.defName === 'roof') {
+        this.indoorRenderer?.refresh(this.roofSystem.getCoveredSet());
+      }
       this.commandQueue.completeCommand();
       this.processNextQueueCommand();
       if (this.isMultiplayer && struct) {
@@ -523,22 +540,40 @@ export class GameScene extends Phaser.Scene {
       // 문 & 지붕 시스템 해제
       const demolishId = this.buildSystem.tileKey(info.tileX, info.tileY);
       if (info.defName === 'door') this.doorSystem.unregisterDoor(demolishId);
-      if (info.defName === 'roof') this.roofSystem.removeRoof(info.tileX, info.tileY);
+      if (info.defName === 'roof') {
+        this.roofSystem.removeRoof(info.tileX, info.tileY);
+        this.indoorRenderer?.refresh(this.roofSystem.getCoveredSet());
+      }
       this.proficiency.addXP('building', 8);
       this.actionSystem.onActionDone('demolish', this.survival);
       if (this.isMultiplayer && info.firebaseId) {
         this.multiplayerSys.uploadBuildingRemoved(info.firebaseId);
       }
     });
+    // Build tick: spawn chip particles once per second during construction
+    this.buildSystem.setBuildTickCallback((wx, wy, material) => {
+      this.buildRenderer?.spawnBuildParticles(wx, wy, material);
+    });
+
     this.commandQueueUI = new CommandQueueUI(this.commandQueue);
     this.shelfUI = new ShelfUI();
     this.proficiency = new ProficiencySystem();
     this.research = new ResearchSystem();
 
-    // 레벨업 팝업
+    // 레벨업 팡파레
     this.proficiency.setOnLevelUp((type, lvl) => {
       this.showLevelUpPopup(type, lvl);
       this.soundSystem.play('levelup');
+      const px = this.player?.sprite?.x ?? 0;
+      const py = this.player?.sprite?.y ?? 0;
+      this.feedbackRenderer?.playLevelUpEffect(px, py, type, lvl);
+    });
+
+    // XP 획득 팝업
+    this.proficiency.setOnXP((type, amount) => {
+      const px = this.player?.sprite?.x ?? 0;
+      const py = this.player?.sprite?.y ?? 0;
+      this.feedbackRenderer?.showXpGain(px, py - 32, type, amount);
     });
 
     const playerRng = new SeededRandom(`${this.seed}_drops_${playerId}`);
@@ -1667,6 +1702,8 @@ export class GameScene extends Phaser.Scene {
         this.playerIsIndoor = this.roofSystem.isCovered(ptx, pty);
         if (wasIndoor !== this.playerIsIndoor) {
           this.weather.setIndoor(this.playerIsIndoor);
+          const hasCf = this.campfireSystem?.isWarm(this.player.sprite.x, this.player.sprite.y) ?? false;
+          this.indoorRenderer?.setIndoor(this.playerIsIndoor, hasCf);
         }
       }
     }
@@ -1960,6 +1997,9 @@ export class GameScene extends Phaser.Scene {
     this.objectRenderer?.destroy();
     this.combatRenderer?.destroy();
     this.enemyRenderer?.destroy();
+    this.buildRenderer?.destroy();
+    this.indoorRenderer?.destroy();
+    this.feedbackRenderer?.destroy();
     this.invasion?.destroy();
     this.transitionSystem?.destroy();
     this.seasonCard?.destroy();
@@ -3131,6 +3171,9 @@ export class GameScene extends Phaser.Scene {
         this.roofSystem.addRoof(b.tileX, b.tileY);
       }
     }
+
+    // Refresh indoor overlay after restoring all roofs
+    this.indoorRenderer?.refresh(this.roofSystem.getCoveredSet());
 
     // 모닥불 복원
     if (saveData.world.campfires) {

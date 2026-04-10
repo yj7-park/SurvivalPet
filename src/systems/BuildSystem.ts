@@ -80,6 +80,8 @@ export class BuildSystem {
   private buildProgressBg!: Phaser.GameObjects.Rectangle;
   private buildProgressFill!: Phaser.GameObjects.Rectangle;
   private buildCompleteCallback: ((struct: PlacedStructure) => void) | null = null;
+  private buildTickCallback: ((wx: number, wy: number, material: StructMaterial, ratio: number) => void) | null = null;
+  private buildLastTickMs = 0;
   private isDoorOpenCb?: (id: string) => boolean;
 
   // 철거 상태
@@ -104,6 +106,7 @@ export class BuildSystem {
   }
 
   setBuildCompleteCallback(cb: (struct: PlacedStructure) => void): void { this.buildCompleteCallback = cb; }
+  setBuildTickCallback(cb: (wx: number, wy: number, material: StructMaterial, ratio: number) => void): void { this.buildTickCallback = cb; }
   setDoorOpenCallback(cb: (id: string) => boolean): void { this.isDoorOpenCb = cb; }
   setDemolishCompleteCallback(cb: (info: { defName: string; material: StructMaterial; tileX: number; tileY: number; firebaseId?: string }) => void): void { this.onDemolishComplete = cb; }
 
@@ -184,7 +187,7 @@ export class BuildSystem {
 
       const totalMs = stats.buildTime(def.baseTimeSec) * (material === 'stone' ? 2 : 1) * profMult;
       this.buildTarget = { tileX, tileY, defName, material, totalMs };
-      this.buildProgressMs = 0;
+      this.buildProgressMs = 0; this.buildLastTickMs = 0;
     }
 
     const wx = tileX * TILE_SIZE + TILE_SIZE / 2;
@@ -357,6 +360,13 @@ export class BuildSystem {
       this.buildProgressBg.setPosition(wx, wy - TILE_SIZE);
       this.buildProgressFill.setPosition(wx, wy - TILE_SIZE);
       this.buildProgressFill.setSize(32 * ratio, 5);
+
+      // Build tick callback: once per second
+      this.buildLastTickMs += delta;
+      if (this.buildLastTickMs >= 1000) {
+        this.buildLastTickMs -= 1000;
+        this.buildTickCallback?.(wx, wy, this.buildTarget.material, ratio);
+      }
 
       if (ratio >= 1) this.completeBuildAction(survival);
     }

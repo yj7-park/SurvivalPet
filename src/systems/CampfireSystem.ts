@@ -38,8 +38,14 @@ export interface Campfire {
   sprite?: Phaser.GameObjects.Sprite;
 }
 
+interface FireEmitters {
+  flame: Phaser.GameObjects.Particles.ParticleEmitter;
+  smoke: Phaser.GameObjects.Particles.ParticleEmitter;
+}
+
 export class CampfireSystem {
   private campfires = new Map<string, Campfire>();
+  private emitters  = new Map<string, FireEmitters>();
   private scene: Phaser.Scene;
   private onExtinguishedCb?: (id: string) => void;
   private onFuelEmptyCb?: (id: string) => void;
@@ -65,7 +71,82 @@ export class CampfireSystem {
       lit: true, isIndoor, sprite,
     };
     this.campfires.set(id, campfire);
+    this.createEmitters(id, wx, wy);
     return campfire;
+  }
+
+  private createEmitters(id: string, wx: number, wy: number): void {
+    const flame = this.scene.add.particles(wx, wy - 4, 'fx_raindrop', {
+      tint: [0xff4400, 0xff8800, 0xffcc00, 0xff2200],
+      scale: { start: 1.3, end: 0 },
+      alpha: { start: 0.9, end: 0 },
+      speedY: { min: -80, max: -50 },
+      speedX: { min: -12, max: 12 },
+      lifespan: { min: 300, max: 500 },
+      quantity: 2, frequency: 45,
+      blendMode: Phaser.BlendModes.ADD,
+    }).setDepth(2.5);
+
+    const smoke = this.scene.add.particles(wx, wy - 10, 'fx_raindrop', {
+      tint: [0x888880, 0xa0a098, 0x707068],
+      scale: { start: 0.6, end: 2.0 },
+      alpha: { start: 0.3, end: 0 },
+      speedY: { min: -28, max: -12 },
+      speedX: { min: -7,  max: 7 },
+      lifespan: { min: 1200, max: 2000 },
+      quantity: 1, frequency: 220,
+    }).setDepth(2.6);
+
+    this.emitters.set(id, { flame, smoke });
+  }
+
+  private destroyEmitters(id: string): void {
+    const em = this.emitters.get(id);
+    if (!em) return;
+    em.flame.destroy();
+    em.smoke.destroy();
+    this.emitters.delete(id);
+  }
+
+  private updateEmitterIntensity(id: string, lit: boolean, fuelRatio: number): void {
+    const em = this.emitters.get(id);
+    if (!em) return;
+
+    if (!lit) {
+      em.flame.stop();
+      em.smoke.stop();
+      return;
+    }
+
+    em.flame.start();
+    em.smoke.start();
+
+    if (fuelRatio > 0.8) {
+      em.flame.setQuantity(3); em.smoke.setQuantity(1);
+    } else if (fuelRatio > 0.5) {
+      em.flame.setQuantity(2); em.smoke.setQuantity(1);
+    } else if (fuelRatio > 0.2) {
+      em.flame.setQuantity(1); em.smoke.setQuantity(2);
+    } else {
+      em.flame.setQuantity(1); em.smoke.setQuantity(3);
+      em.flame.setFrequency(Phaser.Math.Between(80, 200));
+    }
+  }
+
+  private playExtinguishEffect(wx: number, wy: number): void {
+    for (let i = 0; i < 10; i++) {
+      const puff = this.scene.add.circle(wx, wy, Phaser.Math.Between(3, 7), 0xddddcc)
+        .setDepth(3);
+      this.scene.tweens.add({
+        targets: puff,
+        x: puff.x + Phaser.Math.Between(-28, 28),
+        y: puff.y - Phaser.Math.Between(15, 45),
+        scale: { from: 1, to: 3 }, alpha: 0,
+        duration: Phaser.Math.Between(500, 900),
+        ease: 'Quad.easeOut',
+        onComplete: () => puff.destroy(),
+      });
+    }
   }
 
   /** 연료 투입 (인벤토리에서 목재 소모) */
@@ -108,6 +189,7 @@ export class CampfireSystem {
     const cf = this.campfires.get(id);
     if (!cf) return;
     cf.sprite?.destroy();
+    this.destroyEmitters(id);
     this.campfires.delete(id);
   }
 
@@ -186,6 +268,10 @@ export class CampfireSystem {
       if (cf.fuelMs <= 0) {
         cf.fuelMs = 0;
         cf.lit = false;
+        const wx = cf.tileX * TILE_SIZE + TILE_SIZE / 2;
+        const wy = cf.tileY * TILE_SIZE + TILE_SIZE / 2;
+        this.playExtinguishEffect(wx, wy);
+        this.updateEmitterIntensity(cf.id, false, 0);
         this.updateSprite(cf);
         this.onFuelEmptyCb?.(cf.id);
         continue;
@@ -196,12 +282,18 @@ export class CampfireSystem {
         const baseChance = EXTINGUISH_CHANCE[weather] ?? 0;
         if (baseChance > 0 && Math.random() < baseChance * (delta / 16.67)) {
           cf.lit = false;
+          const wx = cf.tileX * TILE_SIZE + TILE_SIZE / 2;
+          const wy = cf.tileY * TILE_SIZE + TILE_SIZE / 2;
+          this.playExtinguishEffect(wx, wy);
+          this.updateEmitterIntensity(cf.id, false, 0);
           this.updateSprite(cf);
           this.onExtinguishedCb?.(cf.id);
           continue;
         }
       }
 
+      const fuelRatio = cf.fuelMs / MAX_FUEL_MS;
+      this.updateEmitterIntensity(cf.id, true, fuelRatio);
       this.updateSprite(cf);
     }
   }
@@ -223,7 +315,10 @@ export class CampfireSystem {
   }
 
   clearMap(): void {
-    for (const cf of this.campfires.values()) cf.sprite?.destroy();
+    for (const cf of this.campfires.values()) {
+      cf.sprite?.destroy();
+      this.destroyEmitters(cf.id);
+    }
     this.campfires.clear();
   }
 

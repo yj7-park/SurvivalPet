@@ -24,6 +24,7 @@ export class ProficiencySystem {
   private data = new Map<ProficiencyType, ProficiencyData>();
   private unlockedByResearch = new Set<string>();
   private onLevelUp: ((type: ProficiencyType, newLevel: number) => void) | null = null;
+  private onXP: ((type: ProficiencyType, amount: number) => void) | null = null;
 
   constructor() {
     const types: ProficiencyType[] = ['cooking', 'crafting', 'building', 'woodcutting', 'mining', 'fishing', 'combat', 'farming'];
@@ -36,10 +37,15 @@ export class ProficiencySystem {
     this.onLevelUp = cb;
   }
 
+  setOnXP(cb: (type: ProficiencyType, amount: number) => void): void {
+    this.onXP = cb;
+  }
+
   addXP(type: ProficiencyType, amount: number): void {
     const d = this.data.get(type)!;
     if (d.level >= MAX_LEVEL) return;
 
+    this.onXP?.(type, amount);
     d.xp += amount;
     d.totalXp += amount;
 
