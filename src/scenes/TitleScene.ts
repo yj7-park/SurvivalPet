@@ -6,6 +6,7 @@ import { SeedInputScreen } from '../ui/SeedInputScreen';
 import { CharacterCreateScreen, CharacterData } from '../ui/CharacterCreateScreen';
 import { SettingsPanel } from '../ui/SettingsPanel';
 import { openLoadSlotPanel } from '../ui/PauseMenu';
+import { SoundSystem } from '../systems/SoundSystem';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -15,6 +16,7 @@ export class TitleScene extends Phaser.Scene {
   private tileRT!: Phaser.GameObjects.RenderTexture;
   private overlay!: HTMLDivElement;
   private saveSystem = new SaveSystem();
+  private soundSystem = new SoundSystem();
   private seedScreen = new SeedInputScreen();
   private charScreen = new CharacterCreateScreen();
   private settingsPanel!: SettingsPanel;
@@ -25,7 +27,7 @@ export class TitleScene extends Phaser.Scene {
 
   create() {
     registerTextures(this);
-    this.settingsPanel = new SettingsPanel(this.saveSystem);
+    this.settingsPanel = new SettingsPanel(this.saveSystem, this.soundSystem);
 
     // Generate background map
     const bgSeed = Math.random().toString(36).substring(2, 8);
@@ -74,7 +76,7 @@ export class TitleScene extends Phaser.Scene {
 
   private buildUI(): void {
     const hasSaves = this.saveSystem.getSlotMeta().some(m => m.occupied);
-    const version = '0.19.0';
+    const version = '0.26.0';
 
     this.overlay = document.createElement('div');
     this.overlay.style.cssText = `
@@ -100,6 +102,21 @@ export class TitleScene extends Phaser.Scene {
     const btnContainer = document.createElement('div');
     btnContainer.style.cssText = 'display:flex;flex-direction:column;gap:10px;pointer-events:all';
 
+    const initSoundOnce = (() => {
+      let done = false;
+      return () => {
+        if (done) return;
+        done = true;
+        const savedSettings = this.saveSystem.loadSettings();
+        void this.soundSystem.init().then(() => {
+          this.soundSystem.setMasterVolume(savedSettings.masterVolume ?? 0.7);
+          this.soundSystem.setSFXVolume(savedSettings.sfxVolume ?? 0.8);
+          this.soundSystem.setBGMVolume(savedSettings.bgmVolume ?? 0.4);
+          this.soundSystem.setBGMTheme('title', 1000);
+        });
+      };
+    })();
+
     const makeBtn = (label: string, bg: string, disabled: boolean, onClick: () => void) => {
       const btn = document.createElement('button');
       btn.textContent = label;
@@ -114,7 +131,7 @@ export class TitleScene extends Phaser.Scene {
       if (!disabled) {
         btn.onmouseenter = () => (btn.style.opacity = '0.82');
         btn.onmouseleave = () => (btn.style.opacity = '1');
-        btn.onclick = onClick;
+        btn.onclick = () => { initSoundOnce(); onClick(); };
       }
       return btn;
     };
@@ -147,6 +164,7 @@ export class TitleScene extends Phaser.Scene {
     this.seedScreen.close();
     this.charScreen.close();
     this.settingsPanel.close();
+    this.soundSystem.silenceBGM();
   }
 
   private pendingIsMultiplayer = false;

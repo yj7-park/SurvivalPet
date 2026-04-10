@@ -40,6 +40,7 @@ import { SleepOverlay } from '../ui/SleepOverlay';
 import { HungerSystem } from '../systems/HungerSystem';
 import { HPSystem } from '../systems/HPSystem';
 import { DeathScreen } from '../ui/DeathScreen';
+import { SoundSystem } from '../systems/SoundSystem';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -158,6 +159,11 @@ export class GameScene extends Phaser.Scene {
   private enemiesKilled = 0;
   private buildingsBuilt = 0;
 
+  // 사운드 시스템
+  soundSystem = new SoundSystem();
+  private bgmUpdateTimer = 0;
+  private readonly BGM_UPDATE_INTERVAL = 30_000; // 30초마다 BGM 갱신
+
   // 행복 수치 & 광란
   private actionSystem = new ActionSystem();
   private frenzyAura!: Phaser.GameObjects.Arc;
@@ -268,6 +274,19 @@ export class GameScene extends Phaser.Scene {
     // 사망 화면
     this.deathScreen = new DeathScreen();
 
+    // 첫 사용자 인터랙션에 AudioContext 초기화 (볼륨 설정 복원 포함)
+    const initSound = () => {
+      const savedSettings = this.saveSystem.loadSettings();
+      void this.soundSystem.init().then(() => {
+        this.soundSystem.setMasterVolume(savedSettings.masterVolume ?? 0.7);
+        this.soundSystem.setSFXVolume(savedSettings.sfxVolume ?? 0.8);
+        this.soundSystem.setBGMVolume(savedSettings.bgmVolume ?? 0.4);
+        this.soundSystem.updateBGMByGameTime(this.gameTime, 'normal');
+      });
+      document.removeEventListener('pointerdown', initSound);
+    };
+    document.addEventListener('pointerdown', initSound, { once: true });
+
     // 내구도 호버 툴팁 & 수리
     this.hoverTooltip = new HoverTooltip(
       () => this.inventory,
@@ -310,6 +329,7 @@ export class GameScene extends Phaser.Scene {
       this.survival.addFatigue(5); // 건설 피로
       this.survival.hunger = Math.max(0, this.survival.hunger - 3); // 건설 허기
       this.buildingsBuilt++;
+      this.soundSystem.play('build_done');
       this.commandQueue.completeCommand();
       this.processNextQueueCommand();
       if (this.isMultiplayer && struct) {
@@ -334,7 +354,10 @@ export class GameScene extends Phaser.Scene {
     this.research = new ResearchSystem();
 
     // 레벨업 팝업
-    this.proficiency.setOnLevelUp((type, lvl) => this.showLevelUpPopup(type, lvl));
+    this.proficiency.setOnLevelUp((type, lvl) => {
+      this.showLevelUpPopup(type, lvl);
+      this.soundSystem.play('levelup');
+    });
 
     const playerRng = new SeededRandom(`${this.seed}_drops_${playerId}`);
     this.interaction = new InteractionSystem(
@@ -360,6 +383,11 @@ export class GameScene extends Phaser.Scene {
       // 활동별 허기 소모
       const hungerMap: Record<string, number> = { woodcutting: 3, mining: 4 };
       if (hungerMap[type]) this.survival.hunger = Math.max(0, this.survival.hunger - hungerMap[type]);
+      // SFX
+      const sfxMap: Record<string, import('../systems/SoundSystem').SoundId> = {
+        woodcutting: 'woodcut_done', mining: 'mine_done', fishing: 'fish_success',
+      };
+      if (sfxMap[type]) this.soundSystem.play(sfxMap[type]);
     });
 
     // Spawn animals on current map
@@ -392,11 +420,14 @@ export class GameScene extends Phaser.Scene {
       this.survival.addFatigue(2); // 전투 피로
       this.survival.hunger = Math.max(0, this.survival.hunger - 1); // 전투 허기
       this.enemiesKilled++;
+      this.soundSystem.play('enemy_die');
     });
 
     // 피격 시 HPSystem 타이머 리셋
-    this.combat.setOnPlayerHitCallback(() => {
+    this.combat.setOnPlayerHitCallback((dmg) => {
       this.hpSystem.onHit();
+      this.soundSystem.play('player_hit', { pitch: 0.9 + Math.random() * 0.2 });
+      void dmg;
     });
 
     // Pointer events — use ptr.worldX/worldY (Phaser applies camera matrix correctly)
@@ -520,6 +551,7 @@ export class GameScene extends Phaser.Scene {
           const result = this.dropSystem.pickup(groundItem.id, this.inventory, this.player.sprite.x, this.player.sprite.y);
           if (result.ok) {
             this.showNotificationPopup(`+${result.item.amount} ${result.item.itemId.replace('item_', '')}`, '#aaffaa');
+            this.soundSystem.play('item_pickup', { pitch: 0.9 + Math.random() * 0.2 });
           } else if (result.reason === 'inventory_full') {
             this.showNotificationPopup('인벤토리가 가득 찼습니다', '#ff8888');
           }
@@ -802,6 +834,19 @@ export class GameScene extends Phaser.Scene {
     this.survival.update(effectiveDelta);
     this.hungerSystem.update(effectiveDelta, this.survival, this.charStats);
     this.hpSystem.update(effectiveDelta, this.survival, this.charStats, this.hungerSystem);
+
+    // BGM 갱신 (30초마다)
+    this.bgmUpdateTimer += delta;
+    if (this.bgmUpdateTimer >= this.BGM_UPDATE_INTERVAL) {
+      this.bgmUpdateTimer = 0;
+      const situation = this.survival.isFrenzy ? 'frenzy' : 'normal';
+      this.soundSystem.updateBGMByGameTime(this.gameTime, situation);
+    }
+
+    // 수면 중 BGM 무음
+    if (this.sleepSystem.isSleeping()) {
+      this.soundSystem.silenceBGM();
+    }
 
     // 사망 감지
     if (!this.isDead && this.survival.hp <= 0) {
@@ -1960,6 +2005,7 @@ export class GameScene extends Phaser.Scene {
 
     const ok = this.sleepSystem.startSleep(bedType, isIndoor, (reason) => this.onWake(reason));
     if (ok) {
+      this.soundSystem.play('sleep_start');
       // 누운 자세 (90도 회전)
       this.player.sprite.setAngle(90);
       this.sleepOverlay.show(this.survival, this.gameTime, () => {
@@ -1978,6 +2024,7 @@ export class GameScene extends Phaser.Scene {
     this.hungerSystem.clearPoisonOnWake();
     // 기상 시 HP 회복 (CON×3)
     this.hpSystem.onWakeUp(this.charStats, this.survival);
+    this.soundSystem.play('wake_up');
 
     const msgs: Record<string, [string, string]> = {
       recovered: ['☀ 기상!', '#ffee44'],
@@ -2149,6 +2196,8 @@ export class GameScene extends Phaser.Scene {
   private triggerDeath(): void {
     // 캐릭터 회색 틴트 → 사망 연출
     this.player.sprite.setTint(0x888888);
+    this.soundSystem.play('player_die');
+    this.soundSystem.silenceBGM();
 
     // 인벤토리 전부 지면에 드랍
     for (const { key, count } of this.inventory.getAll()) {

@@ -1,9 +1,10 @@
 import { SaveSystem, SettingsSaveData } from '../systems/SaveSystem';
+import { SoundSystem } from '../systems/SoundSystem';
 
 export class SettingsPanel {
   private overlay: HTMLDivElement | null = null;
 
-  constructor(private saveSystem: SaveSystem) {}
+  constructor(private saveSystem: SaveSystem, private soundSystem?: SoundSystem) {}
 
   toggle(): void {
     if (this.overlay) { this.close(); } else { this.open(); }
@@ -84,6 +85,55 @@ export class SettingsPanel {
       row.appendChild(sel);
       return row;
     };
+
+    // ── 사운드 ──────────────────────────────────────────────
+    const soundHeader = document.createElement('div');
+    soundHeader.style.cssText = 'color:#7a9;font-size:10px;padding:10px 0 4px;letter-spacing:1px';
+    soundHeader.textContent = '── 사운드 ──────────────────────────';
+    overlay.appendChild(soundHeader);
+
+    const makeSlider = (label: string, initial: number, onChange: (v: number) => void) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #223';
+      const lbl = document.createElement('span');
+      lbl.style.cssText = 'color:#ccc;min-width:90px';
+      lbl.textContent = label;
+      const pct = document.createElement('span');
+      pct.style.cssText = 'color:#aaa;font-size:11px;min-width:36px;text-align:right';
+      pct.textContent = `${Math.round(initial * 100)}%`;
+      const slider = document.createElement('input');
+      slider.type = 'range';
+      slider.min = '0';
+      slider.max = '1';
+      slider.step = '0.05';
+      slider.value = String(initial);
+      slider.style.cssText = 'width:100px;accent-color:#4a8;cursor:pointer';
+      slider.oninput = () => {
+        const v = parseFloat(slider.value);
+        pct.textContent = `${Math.round(v * 100)}%`;
+        onChange(v);
+      };
+      row.appendChild(lbl);
+      row.appendChild(slider);
+      row.appendChild(pct);
+      return row;
+    };
+
+    overlay.appendChild(makeSlider('마스터 볼륨', settings.masterVolume ?? 0.7, (v) => {
+      settings.masterVolume = v;
+      this.soundSystem?.setMasterVolume(v);
+      this.saveSystem.saveSettings(settings);
+    }));
+    overlay.appendChild(makeSlider('효과음', settings.sfxVolume ?? 0.8, (v) => {
+      settings.sfxVolume = v;
+      this.soundSystem?.setSFXVolume(v);
+      this.saveSystem.saveSettings(settings);
+    }));
+    overlay.appendChild(makeSlider('배경음악', settings.bgmVolume ?? 0.4, (v) => {
+      settings.bgmVolume = v;
+      this.soundSystem?.setBGMVolume(v);
+      this.saveSystem.saveSettings(settings);
+    }));
 
     overlay.appendChild(makeToggle('자동 픽업 (자원 아이템)', 'autoPickup', settings.autoPickup));
     overlay.appendChild(makeSelect('자동 저장 주기', 'autoSaveInterval', [

@@ -14,6 +14,7 @@ type GameSceneRef = {
   equipmentSystem: import('../systems/EquipmentSystem').EquipmentSystem;
   multiplayerSys: import('../systems/MultiplayerSystem').MultiplayerSystem;
   hungerSystem: import('../systems/HungerSystem').HungerSystem;
+  soundSystem: import('../systems/SoundSystem').SoundSystem;
   isMultiplayer: boolean;
   seed: string;
   mapX: number;
@@ -194,8 +195,10 @@ export class UIScene extends Phaser.Scene {
     // 광란 진입/종료 알림
     if (s.isFrenzy && !this.prevFrenzy) {
       this.showFrenzyEntryEffect();
+      gs.soundSystem?.play('frenzy_start');
     } else if (!s.isFrenzy && this.prevFrenzy) {
       this.showNoticeText('광란 상태가 해제되었습니다', '#aaffaa');
+      gs.soundSystem?.play('frenzy_end');
     }
     this.prevFrenzy = s.isFrenzy;
 
