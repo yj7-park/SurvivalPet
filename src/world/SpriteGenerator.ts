@@ -145,6 +145,114 @@ function drawTree(): HTMLCanvasElement {
   return c;
 }
 
+// ── Seasonal tree spritesheet ─────────────────────────────────────────────────
+// 4 seasons × 32×48 = 128×48 sheet
+
+type Season = 'spring' | 'summer' | 'autumn' | 'winter';
+
+interface TreePalette {
+  trunk: string;
+  trunkDark: string;
+  leafOuter?: string;
+  leafMid?: string;
+  leafLight?: string;
+  snow?: string;
+  snowShade?: string;
+  branch?: string;
+}
+
+const TREE_PALETTES: Record<Season, TreePalette> = {
+  spring: { trunk: '#8b5e2a', trunkDark: '#6a4420', leafOuter: '#5aaa30', leafMid: '#48921e', leafLight: '#7acc48' },
+  summer: { trunk: '#7a5020', trunkDark: '#5a3810', leafOuter: '#2a7a18', leafMid: '#1e6010', leafLight: '#48a030' },
+  autumn: { trunk: '#8b5e2a', trunkDark: '#6a4420', leafOuter: '#c86010', leafMid: '#a04808', leafLight: '#e88030' },
+  winter: { trunk: '#6a5040', trunkDark: '#4a3428', snow: '#e8f0f8', snowShade: '#c0ccd8', branch: '#4a3428' },
+};
+
+function drawLeafTree(ctx: CanvasRenderingContext2D, pal: TreePalette): void {
+  ctx.fillStyle = pal.leafOuter!;
+  ctx.beginPath(); ctx.ellipse(16, 20, 13, 14, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = pal.leafMid!;
+  ctx.beginPath(); ctx.ellipse(15, 18, 11, 12, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = pal.leafLight!;
+  ctx.beginPath(); ctx.ellipse(13, 13, 6, 6, -0.3, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = pal.leafMid!;
+  ctx.beginPath(); ctx.moveTo(16, 2); ctx.lineTo(10, 12); ctx.lineTo(22, 12); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = pal.leafLight!;
+  ctx.beginPath(); ctx.moveTo(16, 4); ctx.lineTo(12, 12); ctx.lineTo(20, 12); ctx.closePath(); ctx.fill();
+}
+
+function drawWinterTreeBranches(ctx: CanvasRenderingContext2D, pal: TreePalette): void {
+  ctx.strokeStyle = pal.branch!;
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(16, 28); ctx.lineTo(16, 8); ctx.stroke();
+  const branches: [number, number, number, number][] = [
+    [16, 22, 6, 14], [16, 18, 8, 10], [16, 14, 22, 8],
+    [16, 22, 26, 14], [16, 18, 24, 10], [16, 14, 10, 8],
+  ];
+  branches.forEach(([x1, y1, x2, y2]) => {
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  });
+  ctx.fillStyle = pal.snow!;
+  [[6, 13], [8, 9], [22, 7], [26, 13], [24, 9], [10, 7], [16, 7]].forEach(([x, y]) => {
+    ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+  });
+}
+
+function drawSeasonalTree(season: Season): HTMLCanvasElement {
+  const c = makeCanvas(32, 48);
+  const ctx = c.getContext('2d')!;
+  ctx.clearRect(0, 0, 32, 48);
+  const pal = TREE_PALETTES[season];
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.beginPath(); ctx.ellipse(16, 46, 10, 4, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Trunk
+  ctx.fillStyle = pal.trunk;
+  ctx.fillRect(13, 28, 6, 20);
+  ctx.fillStyle = pal.trunkDark;
+  ctx.fillRect(14, 30, 1, 16);
+  ctx.fillRect(17, 32, 1, 14);
+
+  if (season === 'winter') {
+    drawWinterTreeBranches(ctx, pal);
+  } else {
+    drawLeafTree(ctx, pal);
+  }
+
+  return c;
+}
+
+function drawSeasonalTreeSheet(): HTMLCanvasElement {
+  const c = makeCanvas(128, 48);
+  const ctx = c.getContext('2d')!;
+  const seasons: Season[] = ['spring', 'summer', 'autumn', 'winter'];
+  seasons.forEach((s, i) => {
+    ctx.drawImage(drawSeasonalTree(s), i * 32, 0);
+  });
+  return c;
+}
+
+// ── Fishing bobber ─────────────────────────────────────────────────────────────
+
+function drawFishingBobber(): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = 8; c.height = 8;
+  const ctx = c.getContext('2d')!;
+  // Bottom half red
+  ctx.fillStyle = '#cc2222';
+  ctx.beginPath(); ctx.arc(4, 4, 3, 0, Math.PI); ctx.fill();
+  // Top half white
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(4, 4, 3, Math.PI, Math.PI * 2); ctx.fill();
+  // Outline
+  ctx.strokeStyle = '#333333';
+  ctx.lineWidth = 0.8;
+  ctx.beginPath(); ctx.arc(4, 4, 3, 0, Math.PI * 2); ctx.stroke();
+  return c;
+}
+
 interface CharPalette {
   skin: string;
   skinShadow: string;
@@ -1868,6 +1976,17 @@ export function registerTextures(scene: Phaser.Scene): void {
   scene.textures.addCanvas('tile_water', drawWater());
   scene.textures.addCanvas('tile_rock',  drawRock());
   scene.textures.addCanvas('obj_tree',   drawTree());
+
+  // Seasonal tree spritesheet (128×48, 4 cols, each 32×48: spring/summer/autumn/winter)
+  const treeSheet = scene.textures.addCanvas('obj_tree_seasons', drawSeasonalTreeSheet());
+  if (treeSheet) {
+    for (let i = 0; i < 4; i++) {
+      treeSheet.add(i, 0, i * 32, 0, 32, 48);
+    }
+  }
+
+  // Fishing bobber (8×8)
+  scene.textures.addCanvas('fx_bobber', drawFishingBobber());
 
   // Character sprites — 3 appearance palettes (static textures for backward compat)
   for (let i = 0; i < 3; i++) {

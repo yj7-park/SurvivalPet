@@ -35,6 +35,7 @@ export class InteractionSystem {
   // callbacks
   private onInteractionComplete: (() => void) | null = null;
   private onResourceGathered: ((type: 'woodcutting' | 'mining' | 'fishing') => void) | null = null;
+  private onMiningTick: ((ratio: number, tx: number, ty: number) => void) | null = null;
 
   constructor(
     private scene: Phaser.Scene,
@@ -65,6 +66,7 @@ export class InteractionSystem {
   hasActiveInteraction(): boolean { return this.activeTarget !== null; }
   setOnInteractionComplete(cb: (() => void) | null): void { this.onInteractionComplete = cb; }
   setOnResourceGathered(cb: (type: 'woodcutting' | 'mining' | 'fishing') => void): void { this.onResourceGathered = cb; }
+  setOnMiningTick(cb: ((ratio: number, tx: number, ty: number) => void) | null): void { this.onMiningTick = cb; }
 
   /** Called from GameScene.update() on Phaser pointer-move event */
   onPointerMove(worldX: number, worldY: number, screenX: number, screenY: number): void {
@@ -214,6 +216,11 @@ export class InteractionSystem {
     const ratio = Math.min(1, this.progressMs / this.totalMs);
     const remaining = Math.ceil((this.totalMs - this.progressMs) / 1000);
 
+    // Notify mining tick for crack visuals
+    if (this.onMiningTick && target.kind === 'tile' && target.tileType === TileType.Rock) {
+      this.onMiningTick(ratio, target.tileX, target.tileY);
+    }
+
     this.progressFill.setSize(32 * ratio, 5);
     this.progressLabel.setText(`${remaining}s`);
     this.progressBg.setPosition(twx, twy - TILE_SIZE);
@@ -271,6 +278,7 @@ export class InteractionSystem {
     this.progressBg.setVisible(false);
     this.progressFill.setVisible(false);
     this.progressLabel.setVisible(false);
+    this.onMiningTick?.(-1, 0, 0); // signal to hide cracks (ratio -1)
   }
 
   private getHoverLabel(worldX: number, worldY: number): string | null {

@@ -63,6 +63,8 @@ import { FarmlandSaveEntry } from '../systems/SaveSystem';
 import { AnimationManager } from '../rendering/AnimationManager';
 import { CharacterRenderer } from '../rendering/CharacterRenderer';
 import { TileRenderer, DIRT_TINTS } from '../rendering/TileRenderer';
+import { TreeRenderer } from '../rendering/TreeRenderer';
+import { ObjectRenderer } from '../rendering/ObjectRenderer';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -260,8 +262,9 @@ export class GameScene extends Phaser.Scene {
   private chatBubbles!: ChatBubbleManager;
   private prevFrenzyForChat = false;
 
-  // Individual tree sprites for depth sorting
-  private treeSprites = new Map<string, Phaser.GameObjects.Image>();
+  // Tree and object visual renderers
+  private treeRenderer!: TreeRenderer;
+  private objectRenderer!: ObjectRenderer;
 
   // Other players
   private remotePlayerDisplays = new Map<string, {
@@ -331,6 +334,8 @@ export class GameScene extends Phaser.Scene {
     this.player.sprite.setDepth(this.player.sprite.y);
     this.charRenderer = new CharacterRenderer(this, this.player.sprite, this.pendingAppearance);
     this.tileRenderer = new TileRenderer(this);
+    this.treeRenderer = new TreeRenderer(this);
+    this.objectRenderer = new ObjectRenderer(this);
 
     this.cameras.main.startFollow(this.player.sprite, true);
     this.cameras.main.setZoom(2);
@@ -546,6 +551,13 @@ export class GameScene extends Phaser.Scene {
       };
       if (sfxMap[type]) this.soundSystem.play(sfxMap[type]);
       if (type === 'fishing') this.tutorialSystem.onEvent('fish_completed');
+    });
+    this.interaction.setOnMiningTick((ratio, tx, ty) => {
+      if (ratio < 0) {
+        this.objectRenderer?.hideCracks();
+      } else if (ratio > 0) {
+        this.objectRenderer?.showCracks(tx, ty, ratio);
+      }
     });
 
     // Spawn animals on current map
@@ -1726,6 +1738,7 @@ export class GameScene extends Phaser.Scene {
         this.showNotificationPopup('❄ 겨울이 왔습니다. 충분한 음식과 실내 공간을 확보하세요.', '#aaddff');
       }
       this.tileRenderer?.applySeasonTint(season, this.tileRT);
+      this.treeRenderer?.onSeasonChanged(season);
     }
 
     // 모닥불 시스템 업데이트
@@ -1912,6 +1925,8 @@ export class GameScene extends Phaser.Scene {
     this.campfireSystem?.destroy();
     this.farmingSystem?.destroy();
     this.tileRenderer?.clearMap();
+    this.treeRenderer?.destroy();
+    this.objectRenderer?.destroy();
     this.charRenderer?.destroy();
     this.logPanel?.close();
     this.notifySystem?.destroy();
@@ -1926,8 +1941,8 @@ export class GameScene extends Phaser.Scene {
     this.currentTiles = mapData.tiles;
 
     if (this.tileRT) this.tileRT.destroy();
-    this.treeSprites.forEach(s => s.destroy());
-    this.treeSprites.clear();
+    this.treeRenderer?.clearAll();
+    this.tileRenderer?.clearMap();
     this.tileRT = this.add.renderTexture(0, 0, MAP_W * TILE_SIZE, MAP_H * TILE_SIZE).setDepth(0).setOrigin(0, 0);
     this.renderTiles(this.currentTiles);
 
@@ -1970,24 +1985,13 @@ export class GameScene extends Phaser.Scene {
   private restoreTree(tx: number, ty: number): void {
     this.currentTiles[ty][tx] = TileType.Tree;
     this.tileRT.draw('tile_dirt', tx * TILE_SIZE, ty * TILE_SIZE);
-    this.addTreeSprite(tx, ty);
+    this.treeRenderer.addTree(tx, ty, this.gameTime?.season ?? 'spring');
   }
 
   private restoreTreeWithAnimation(tx: number, ty: number): void {
-    const wx = tx * TILE_SIZE;
-    const wy = ty * TILE_SIZE;
-    // Show seedling sprite, scale up, then replace with full tree
-    const seedling = this.add.image(wx, wy, 'seedling').setOrigin(0, 0).setDepth((ty + 1) * TILE_SIZE).setScale(0);
-    this.tweens.add({
-      targets: seedling,
-      scaleX: 1, scaleY: 1,
-      duration: 300,
-      ease: 'Back.easeOut',
-      onComplete: () => {
-        seedling.destroy();
-        this.restoreTree(tx, ty);
-      },
-    });
+    this.currentTiles[ty][tx] = TileType.Tree;
+    this.tileRT.draw('tile_dirt', tx * TILE_SIZE, ty * TILE_SIZE);
+    this.treeRenderer.startRegrowAnimation(tx, ty, this.gameTime?.season ?? 'spring');
   }
 
   /** 벌목/채굴 완료 후 타일 한 칸을 Dirt로 교체하고 RT 갱신 */
@@ -1998,9 +2002,7 @@ export class GameScene extends Phaser.Scene {
     // Track cleared trees for regeneration
     if (originalType === TileType.Tree) {
       this.clearedTrees.push({ tx, ty, regrowAt: Date.now() + this.TREE_REGROW_MS });
-      const key = `${tx},${ty}`;
-      this.treeSprites.get(key)?.destroy();
-      this.treeSprites.delete(key);
+      this.treeRenderer.removeTreeWithFall(tx, ty, this.player.sprite.x, this.gameTime?.season ?? 'spring');
       if (this.isMultiplayer) this.multiplayerSys.uploadTreeCut(this.mapX, this.mapY, tx, ty);
     } else if (originalType === TileType.Rock) {
       this.clearedRocks.push({ tx, ty });
@@ -2040,19 +2042,11 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Draw tree canopies as individual sprites for Y-based depth sorting
+    const season = this.gameTime?.season ?? 'spring';
     for (let ty = 0; ty < MAP_H; ty++)
       for (let tx = 0; tx < MAP_W; tx++)
         if (tiles[ty][tx] === TileType.Tree)
-          this.addTreeSprite(tx, ty);
-  }
-
-  private addTreeSprite(tx: number, ty: number): void {
-    const key = `${tx},${ty}`;
-    const img = this.add.image(tx * TILE_SIZE, ty * TILE_SIZE - TREE_OVERHANG, 'obj_tree')
-      .setOrigin(0, 0)
-      // depth = bottom of tile = (ty+1)*TILE_SIZE so player at same row renders behind it
-      .setDepth((ty + 1) * TILE_SIZE);
-    this.treeSprites.set(key, img);
+          this.treeRenderer.addTree(tx, ty, season);
   }
 
   private findStartTile(tiles: TileType[][]): { x: number; y: number } {
@@ -3080,9 +3074,7 @@ export class GameScene extends Phaser.Scene {
       if (this.currentTiles[t.tileY]?.[t.tileX] !== TileType.Dirt) {
         this.currentTiles[t.tileY][t.tileX] = TileType.Dirt;
         this.tileRT.draw('tile_dirt', t.tileX * TILE_SIZE, t.tileY * TILE_SIZE);
-        const key = `${t.tileX},${t.tileY}`;
-        this.treeSprites.get(key)?.destroy();
-        this.treeSprites.delete(key);
+        this.treeRenderer.removeTree(t.tileX, t.tileY);
         this.clearedTrees.push({ tx: t.tileX, ty: t.tileY, regrowAt });
       }
     }
