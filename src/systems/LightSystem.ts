@@ -84,8 +84,9 @@ export class LightSystem {
       torchLight.x = playerX;
       torchLight.y = playerY;
 
-      // Countdown (weather torchDuration < 1 → faster drain)
-      this.torchRemainingMs -= delta * (weatherTorchDuration > 0 ? 1 / weatherTorchDuration : 1);
+      // Countdown: clamp to ≥0.1 to prevent negative/zero division and extreme drain
+      const safeDuration = Math.max(0.1, weatherTorchDuration);
+      this.torchRemainingMs -= delta / safeDuration;
       if (!this.torchWarnedOnce && this.torchRemainingMs <= TORCH_WARN_MS) {
         this.torchWarnedOnce = true;
         this.onTorchWarning?.();
