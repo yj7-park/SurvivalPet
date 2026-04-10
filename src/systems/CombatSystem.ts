@@ -11,6 +11,7 @@ import { TILE_SIZE } from '../world/MapGenerator';
 import { EffectSystem } from './EffectSystem';
 import { EquipmentSystem } from './EquipmentSystem';
 import { ProficiencySystem } from './ProficiencySystem';
+import { CombatRenderer } from '../rendering/CombatRenderer';
 
 export class CombatSystem {
   private lockedTarget: Animal | null = null;
@@ -28,6 +29,7 @@ export class CombatSystem {
   private effects: EffectSystem | null = null;
   private equipmentSystem: EquipmentSystem | null = null;
   private proficiency: ProficiencySystem | null = null;
+  private combatRenderer: CombatRenderer | null = null;
 
   constructor(
     private scene: Phaser.Scene,
@@ -84,6 +86,7 @@ export class CombatSystem {
     this.onAnimalKillCallback = cb;
   }
   setEffectSystem(effects: EffectSystem): void { this.effects = effects; }
+  setCombatRenderer(cr: CombatRenderer): void { this.combatRenderer = cr; }
   setEquipmentSystem(equip: EquipmentSystem, prof: ProficiencySystem): void {
     this.equipmentSystem = equip;
     this.proficiency = prof;
@@ -110,7 +113,12 @@ export class CombatSystem {
     const defense = this.equipmentSystem?.totalDefense ?? 0;
     const actual  = Math.max(1, Math.floor(dmg - this.stats.con * 0.5 - defense));
     this.survival.hp = Math.max(0, this.survival.hp - actual);
-    this.spawnFloatText(this.player.sprite.x, this.player.sprite.y - 20, `-${actual}`, '#ff4444');
+    if (this.combatRenderer) {
+      this.combatRenderer.spawnDamagePopup(this.player.sprite.x, this.player.sprite.y, actual, false, false);
+      this.combatRenderer.flashHitVignette(actual / 20);
+    } else {
+      this.spawnFloatText(this.player.sprite.x, this.player.sprite.y - 20, `-${actual}`, '#ff4444');
+    }
     this.hitFlashCallback?.();
     this.onPlayerHitCallback?.(actual);
     // 피격 스프라이트 흰색 플래시
@@ -122,6 +130,7 @@ export class CombatSystem {
     this.updateLockOn(delta);
     this.updateProjectiles(delta);
     this.updateDamageTexts(delta);
+    this.combatRenderer?.update(delta);
   }
 
   private updateLockOn(delta: number): void {
@@ -166,7 +175,18 @@ export class CombatSystem {
     const animalType = target.config.type as string;
     const drops = this.animalMgr.attackAnimal(target, dmg, this.player.sprite.x, this.player.sprite.y, this.rng);
     drops.forEach(d => this.inventory.add(d.itemKey, d.count));
-    this.spawnFloatText(tx, ty - 20, `-${dmg}`, '#ffffff');
+    if (this.combatRenderer) {
+      const isCrit = dmg >= 10;
+      this.combatRenderer.spawnDamagePopup(tx, ty, dmg, isCrit, false);
+      const angle = Math.atan2(ty - this.player.sprite.y, tx - this.player.sprite.x);
+      this.combatRenderer.spawnSlashEffect(
+        (this.player.sprite.x + tx) / 2,
+        (this.player.sprite.y + ty) / 2,
+        angle,
+      );
+    } else {
+      this.spawnFloatText(tx, ty - 20, `-${dmg}`, '#ffffff');
+    }
     // 적 피격 스프라이트 흰색 플래시
     if (!target.isDead) {
       target.sprite.setTintFill(0xffffff);
@@ -216,7 +236,11 @@ export class CombatSystem {
             target, dmg, this.player.sprite.x, this.player.sprite.y, this.rng,
           );
           drops.forEach(d => this.inventory.add(d.itemKey, d.count));
-          this.spawnFloatText(target.x, target.y - 20, `-${dmg}`, '#ff6666');
+          if (this.combatRenderer) {
+            this.combatRenderer.spawnDamagePopup(target.x, target.y, dmg, dmg >= 8, false);
+          } else {
+            this.spawnFloatText(target.x, target.y - 20, `-${dmg}`, '#ff6666');
+          }
           this.spawnHitFlash(target.x, target.y);
           if (target.isDead) {
             this.onKillCallback?.();
@@ -292,5 +316,6 @@ export class CombatSystem {
     this.lockCircle.destroy();
     this.projectiles.forEach(p => (p as Phaser.GameObjects.GameObject).destroy());
     this.damageTexts.forEach(d => d.text.destroy());
+    this.combatRenderer?.destroy();
   }
 }

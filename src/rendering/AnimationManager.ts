@@ -43,5 +43,34 @@ export class AnimationManager {
       repeat: -1,
       yoyo: true,
     });
+
+    // Enemy animations (sheet layout: row0=front idle/walk1/walk2/attack, row1=left, row2=death×4)
+    for (const type of ['enemy_wolf', 'enemy_tiger', 'enemy_raider', 'enemy_raider_boss']) {
+      const prefix = type.replace('enemy_', '').replace('_', '');
+      scene.anims.create({
+        key: `${prefix}_idle`,
+        frames: [{ key: type, frame: 0 }],
+        frameRate: 2,
+        repeat: -1,
+      });
+      scene.anims.create({
+        key: `${prefix}_walk`,
+        frames: [{ key: type, frame: 1 }, { key: type, frame: 2 }],
+        frameRate: 7,
+        repeat: -1,
+      });
+      scene.anims.create({
+        key: `${prefix}_attack`,
+        frames: [{ key: type, frame: 3 }, { key: type, frame: 0 }],
+        frameRate: 8,
+        repeat: 0,
+      });
+      scene.anims.create({
+        key: `${prefix}_die`,
+        frames: scene.anims.generateFrameNumbers(type, { start: 8, end: 11 }),
+        frameRate: 6,
+        repeat: 0,
+      });
+    }
   }
 }

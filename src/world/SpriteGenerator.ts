@@ -1651,6 +1651,157 @@ function drawWolf(state: 'idle' | 'walk' | 'attack'): HTMLCanvasElement {
   return c;
 }
 
+// ── Enemy spritesheets (128×96: 4col × 3row, each cell 32×32) ────────────
+// Row0=down-facing (idle/walk1/walk2/attack), Row1=left-facing (mirrored), Row2=death(4frames)
+
+function composeEnemySheet(
+  idle: HTMLCanvasElement,
+  walk: HTMLCanvasElement,
+  attack: HTMLCanvasElement,
+): HTMLCanvasElement {
+  const sheet = makeCanvas(128, 96);
+  const ctx = sheet.getContext('2d')!;
+
+  // Row 0: front-facing
+  ctx.drawImage(idle,   0,  0);
+  ctx.drawImage(walk,  32,  0);
+  // walk2: horizontally flip walk for 2-frame cycle
+  ctx.save(); ctx.translate(64 + 32, 0); ctx.scale(-1, 1);
+  ctx.drawImage(walk, 0, 0);
+  ctx.restore();
+  ctx.drawImage(attack, 96, 0);
+
+  // Row 1: left-facing (mirror row 0)
+  ctx.save(); ctx.translate(128, 32); ctx.scale(-1, 1);
+  ctx.drawImage(sheet, 0, 0, 128, 32, 0, 0, 128, 32);
+  ctx.restore();
+
+  // Row 2: death (progressive tilt + fade)
+  const angles = [5, 25, 55, 85];
+  const alphas  = [0.9, 0.75, 0.5, 0.25];
+  for (let i = 0; i < 4; i++) {
+    ctx.save();
+    ctx.translate(i * 32 + 16, 64 + 24);
+    ctx.rotate(Phaser.Math.DegToRad(angles[i]));
+    ctx.globalAlpha = alphas[i];
+    ctx.drawImage(idle, -16, -24);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  return sheet;
+}
+
+function drawWolfSheet(): HTMLCanvasElement {
+  return composeEnemySheet(drawWolf('idle'), drawWolf('walk'), drawWolf('attack'));
+}
+
+function drawTigerSheet(): HTMLCanvasElement {
+  return composeEnemySheet(drawTiger('idle'), drawTiger('walk'), drawTiger('attack'));
+}
+
+function drawRaiderSheet(): HTMLCanvasElement {
+  const idle   = drawRaider('idle');
+  const walk   = drawRaider('walk');
+  const attack = drawRaider('attack');
+  return composeEnemySheet(idle, walk, attack);
+}
+
+function drawRaiderBossSheet(): HTMLCanvasElement {
+  const idle   = drawRaider('idle', true);
+  const walk   = drawRaider('walk', true);
+  const attack = drawRaider('attack', true);
+  return composeEnemySheet(idle, walk, attack);
+}
+
+function drawRaider(state: 'idle' | 'walk' | 'attack', isBoss = false): HTMLCanvasElement {
+  const c = makeCanvas(32, 32); const ctx = c.getContext('2d')!;
+  ctx.clearRect(0, 0, 32, 32);
+
+  const skin    = isBoss ? '#b89060' : '#d0a878';
+  const armor   = isBoss ? '#3a2818' : '#7a6040';
+  const cloth   = isBoss ? '#4a3428' : '#5a4030';
+  const weapon  = isBoss ? '#d0c0a0' : '#9a9090';
+  const outline = '#1a1008';
+  const legOff  = state === 'walk' ? 2 : 0;
+  const atkLean = state === 'attack' ? -2 : 0;
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.beginPath(); ctx.ellipse(16, 30, 6, 2, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Legs
+  ctx.fillStyle = cloth;
+  ctx.fillRect(11, 22, 4, 7 + legOff);
+  ctx.fillRect(17, 22, 4, 7 - legOff);
+  ctx.fillStyle = outline;
+  ctx.fillRect(11, 28, 5, 2); ctx.fillRect(17, 28, 5, 2); // boots
+
+  // Body/armor
+  ctx.fillStyle = armor;
+  ctx.fillRect(9 + atkLean, 13, 14, 11);
+  if (isBoss) {
+    ctx.fillStyle = '#8a1010'; // red cape
+    ctx.fillRect(8 + atkLean, 12, 3, 14);
+    ctx.fillRect(21 + atkLean, 12, 3, 14);
+  }
+
+  // Arms
+  ctx.fillStyle = armor;
+  ctx.fillRect(5 + atkLean, 13, 4, 9);
+  ctx.fillRect(23 + atkLean, 13, 4, 9);
+  ctx.fillStyle = skin;
+  ctx.fillRect(5 + atkLean, 21, 4, 3); ctx.fillRect(23 + atkLean, 21, 4, 3);
+
+  // Weapon (sword or axe for boss)
+  ctx.fillStyle = weapon;
+  if (state === 'attack') {
+    ctx.fillRect(1 + atkLean, 10, 3, 14); // weapon raised
+  } else {
+    ctx.fillRect(2 + atkLean, 16, 3, 12);
+  }
+  if (isBoss) { // axe head
+    ctx.fillRect(-2 + atkLean, state === 'attack' ? 8 : 14, 5, 4);
+  }
+
+  // Head
+  ctx.fillStyle = skin;
+  ctx.fillRect(13 + atkLean, 10, 6, 4);
+  ctx.fillRect(9 + atkLean, 3, 14, 12);
+
+  // Helmet
+  ctx.fillStyle = armor;
+  ctx.fillRect(9 + atkLean, 3, 14, 4);
+  if (isBoss) {
+    ctx.fillStyle = '#c0a030'; // boss crown decoration
+    ctx.fillRect(12 + atkLean, 2, 8, 2);
+  }
+
+  // Face
+  ctx.fillStyle = outline;
+  ctx.fillRect(11 + atkLean, 7, 3, 2); ctx.fillRect(18 + atkLean, 7, 3, 2);
+  ctx.fillStyle = state === 'attack' ? '#ff4444' : '#cc4444';
+  ctx.fillRect(11 + atkLean, 7, 1, 1); ctx.fillRect(18 + atkLean, 7, 1, 1);
+  ctx.fillStyle = outline;
+  ctx.fillRect(13 + atkLean, 11, 6, 1); // grimace
+
+  return c;
+}
+
+function drawFxArrow(): HTMLCanvasElement {
+  const c = makeCanvas(8, 3); const ctx = c.getContext('2d')!;
+  ctx.clearRect(0, 0, 8, 3);
+  // Shaft
+  ctx.fillStyle = '#a07040'; ctx.fillRect(0, 1, 6, 1);
+  // Head
+  ctx.fillStyle = '#707070';
+  ctx.beginPath(); ctx.moveTo(6, 0); ctx.lineTo(8, 1.5); ctx.lineTo(6, 3); ctx.closePath(); ctx.fill();
+  // Fletching
+  ctx.fillStyle = '#d0c0a0';
+  ctx.beginPath(); ctx.moveTo(0, 1); ctx.lineTo(-2, 0); ctx.lineTo(0, 2); ctx.closePath(); ctx.fill();
+  return c;
+}
+
 /** Canvas API로 균열 오버레이 텍스처 생성 (레벨 1~3) */
 function drawCrackOverlay(level: 1 | 2 | 3): HTMLCanvasElement {
   const c = makeCanvas();
@@ -2127,8 +2278,25 @@ export function registerTextures(scene: Phaser.Scene): void {
   scene.textures.addCanvas('animal_tiger_walk',     drawTiger('walk'));
   scene.textures.addCanvas('animal_tiger_attack',   drawTiger('attack'));
 
-  // Enemies
+  // Enemies (single idle kept for backward compat)
   scene.textures.addCanvas('enemy_idle',            drawEnemy());
+
+  // Enemy spritesheets (128×96, 4col × 3row)
+  const wolfSheet   = scene.textures.addCanvas('enemy_wolf',         drawWolfSheet());
+  const tigerSheet  = scene.textures.addCanvas('enemy_tiger',        drawTigerSheet());
+  const raiderSheet = scene.textures.addCanvas('enemy_raider',       drawRaiderSheet());
+  const bossSheet   = scene.textures.addCanvas('enemy_raider_boss',  drawRaiderBossSheet());
+  const fx_arrow    = scene.textures.addCanvas('fx_arrow',           drawFxArrow());
+  void fx_arrow;
+  for (const sheet of [wolfSheet, tigerSheet, raiderSheet, bossSheet]) {
+    if (sheet) {
+      for (let row = 0; row < 3; row++) {
+        for (let col = 0; col < 4; col++) {
+          sheet.add(row * 4 + col, 0, col * 32, row * 32, 32, 32);
+        }
+      }
+    }
+  }
 
   // Structures (wood)
   scene.textures.addCanvas('struct_wall_wood',      drawWall(PAL.wood, true));

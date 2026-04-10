@@ -65,6 +65,8 @@ import { CharacterRenderer } from '../rendering/CharacterRenderer';
 import { TileRenderer, DIRT_TINTS } from '../rendering/TileRenderer';
 import { TreeRenderer } from '../rendering/TreeRenderer';
 import { ObjectRenderer } from '../rendering/ObjectRenderer';
+import { CombatRenderer } from '../rendering/CombatRenderer';
+import { EnemyRenderer } from '../rendering/EnemyRenderer';
 import { UI_COLORS, PANEL_CSS, BTN_CSS } from '../config/uiColors';
 import { TransitionSystem } from '../systems/TransitionSystem';
 import { SeasonCard } from '../ui/SeasonCard';
@@ -269,6 +271,8 @@ export class GameScene extends Phaser.Scene {
   // Tree and object visual renderers
   private treeRenderer!: TreeRenderer;
   private objectRenderer!: ObjectRenderer;
+  private combatRenderer!: CombatRenderer;
+  private enemyRenderer!: EnemyRenderer;
 
   // Transition & atmosphere
   private transitionSystem!: TransitionSystem;
@@ -333,6 +337,8 @@ export class GameScene extends Phaser.Scene {
     this.tileRenderer = new TileRenderer(this);
     this.treeRenderer = new TreeRenderer(this);
     this.objectRenderer = new ObjectRenderer(this);
+    this.combatRenderer = new CombatRenderer(this);
+    this.enemyRenderer = new EnemyRenderer(this);
 
     const startMx = this.mapX, startMy = this.mapY;
     const firstMap = this.mapGenerator.generateMap(startMx, startMy);
@@ -583,6 +589,7 @@ export class GameScene extends Phaser.Scene {
       this, this.player, this.charStats, this.survival, this.inventory, this.animalMgr, playerRng2,
     );
     this.combat.setEffectSystem(this.effects);
+    this.combat.setCombatRenderer(this.combatRenderer);
 
     this.equipmentSystem = new EquipmentSystem();
     this.combat.setEquipmentSystem(this.equipmentSystem, this.proficiency);
@@ -1951,6 +1958,9 @@ export class GameScene extends Phaser.Scene {
     this.tileRenderer?.clearMap();
     this.treeRenderer?.destroy();
     this.objectRenderer?.destroy();
+    this.combatRenderer?.destroy();
+    this.enemyRenderer?.destroy();
+    this.invasion?.destroy();
     this.transitionSystem?.destroy();
     this.seasonCard?.destroy();
     this.starLayer?.destroy();

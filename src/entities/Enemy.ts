@@ -60,8 +60,11 @@ export class Enemy {
 
     this.rng = rng;
 
-    // 스프라이트 (적군 색상: 빨강)
-    this.sprite = scene.add.sprite(x, y, 'enemy_idle').setDepth(4);
+    // 스프라이트
+    this.sprite = scene.add.sprite(x, y, 'enemy_raider', 0).setDepth(4);
+    if (scene.anims.exists('raider_idle')) {
+      this.sprite.play('raider_idle');
+    }
 
     // HP 바
     const w = 32;
@@ -109,6 +112,14 @@ export class Enemy {
             (dx / distPx) * step,
             (dy / distPx) * step
           );
+          this.sprite.flipX = dx < 0;
+          if (!this.sprite.anims.isPlaying || this.sprite.anims.currentAnim?.key === 'raider_idle') {
+            if (this.sprite.anims.exists?.('raider_walk')) this.sprite.play('raider_walk', true);
+          }
+        } else {
+          if (this.sprite.anims.currentAnim?.key === 'raider_walk') {
+            if (this.sprite.anims.exists?.('raider_idle')) this.sprite.play('raider_idle', true);
+          }
         }
 
         // 공격 쿨다운

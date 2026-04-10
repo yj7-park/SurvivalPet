@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { GameTime } from './GameTime';
 import { SeededRandom } from '../utils/seedRandom';
+import { InvasionHUD } from '../ui/InvasionHUD';
 
 export interface Enemy {
   id: string;
@@ -52,13 +53,16 @@ export class InvasionSystem {
   private invasionPanel: HTMLDivElement | null = null;
   private dangerOverlay: Phaser.GameObjects.Rectangle | null = null;
   private dangerText: Phaser.GameObjects.Text | null = null;
+  private invasionHUD: InvasionHUD;
 
   constructor(
     private scene: Phaser.Scene,
     private gameTime: GameTime,
     private seed: string,
     private playerId: string,
-  ) {}
+  ) {
+    this.invasionHUD = new InvasionHUD(scene);
+  }
 
   /** 지정 날짜의 침입 이벤트 생성 */
   private planDay(day: number): InvasionEvent[] {
@@ -192,9 +196,14 @@ export class InvasionSystem {
     // 침입 알림 패널 표시
     this.showInvasionPanel(event);
 
+    // 방향 화살표 + 카운트다운 HUD
+    this.invasionHUD.showDirectionArrows(event.direction, event.count);
+    this.invasionHUD.showCountdown(event.direction, event.count, 15);
+
     // 15초 후 자동 재개 (현재는 패널로만 표시)
     this.scene.time.delayedCall(15000, () => {
       this.closeInvasionPanel();
+      this.invasionHUD.clearArrows();
     });
   }
 
@@ -333,5 +342,11 @@ export class InvasionSystem {
     this.dangerText?.destroy();
     this.dangerOverlay = null;
     this.dangerText = null;
+  }
+
+  destroy(): void {
+    this.closeInvasionPanel();
+    this.closeDangerUI();
+    this.invasionHUD.destroy();
   }
 }
