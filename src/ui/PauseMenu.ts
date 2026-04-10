@@ -1,4 +1,5 @@
-import { SaveSystem, SaveData } from '../systems/SaveSystem';
+import { SaveSystem, SaveData, SettingsSaveData } from '../systems/SaveSystem';
+import type { SoundSystem } from '../systems/SoundSystem';
 
 function formatPlaytime(ms: number): string {
   const secs = Math.floor(ms / 1000);
@@ -27,6 +28,8 @@ function showStatusToast(msg: string, isError = false): void {
 export class PauseMenu {
   private overlay: HTMLDivElement | null = null;
   private subPanel: HTMLDivElement | null = null;
+  private onPause?: () => void;
+  private onResume?: () => void;
 
   constructor(
     private saveSystem: SaveSystem,
@@ -34,7 +37,15 @@ export class PauseMenu {
     private onLoadGame: (saveData: SaveData) => void,
     private onReturnToTitle: () => void,
     private isMultiplayer = false,
+    private soundSystem?: SoundSystem,
+    private getHudSettings?: () => { showFPS: boolean; showCoords: boolean },
+    private onSettingsChanged?: (settings: Partial<SettingsSaveData>) => void,
   ) {}
+
+  setPauseCallbacks(onPause: () => void, onResume: () => void): void {
+    this.onPause = onPause;
+    this.onResume = onResume;
+  }
 
   toggle(): void {
     if (this.overlay) { this.close(); } else { this.open(); }
@@ -42,15 +53,19 @@ export class PauseMenu {
 
   open(): void {
     if (this.overlay) return;
+    this.onPause?.();
 
     const overlay = document.createElement('div');
     overlay.style.cssText = `
       position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
       background:rgba(10,15,25,0.97);border:1px solid #446;
       border-radius:8px;padding:24px;z-index:900;color:#eee;
-      font:14px monospace;min-width:200px;text-align:center;
+      font:14px monospace;min-width:220px;text-align:center;
     `;
-    overlay.innerHTML = `<div style="font-size:16px;font-weight:bold;color:#e2b96f;margin-bottom:16px">일시정지</div>`;
+    overlay.innerHTML = `
+      <div style="font-size:18px;font-weight:bold;color:#e2b96f;margin-bottom:4px">⛺ BASECAMP</div>
+      <div style="font-size:11px;color:#666;margin-bottom:16px">일시정지</div>
+    `;
 
     const makeBtn = (label: string, bg: string, onClick: () => void) => {
       const btn = document.createElement('button');
@@ -66,11 +81,18 @@ export class PauseMenu {
       return btn;
     };
 
+    overlay.appendChild(makeBtn('계속하기', '#223344', () => this.close()));
     if (!this.isMultiplayer) {
-      overlay.appendChild(makeBtn('저장하기', '#2a4a2a', () => this.openSavePanel()));
+      overlay.appendChild(makeBtn('지금 저장', '#2a4a2a', () => {
+        const data = this.onCollectSaveData();
+        data.savedAt = Date.now();
+        const res = this.saveSystem.saveAuto(data);
+        showStatusToast(res.ok ? '💾 저장되었습니다' : '⚠ 저장 실패');
+      }));
       overlay.appendChild(makeBtn('불러오기', '#2a3a4a', () => this.openLoadPanel()));
     }
-    overlay.appendChild(makeBtn('타이틀로', '#3a2a2a', () => {
+    overlay.appendChild(makeBtn('설정', '#2a2a3a', () => this.openSettingsPanel()));
+    overlay.appendChild(makeBtn('타이틀로 돌아가기', '#3a2a2a', () => {
       this.openReturnConfirm();
     }));
 
@@ -93,6 +115,7 @@ export class PauseMenu {
     this.subPanel = null;
     this.overlay?.remove();
     this.overlay = null;
+    this.onResume?.();
   }
 
   isOpen(): boolean { return this.overlay !== null; }
@@ -148,6 +171,104 @@ export class PauseMenu {
     }));
 
     panel.appendChild(btnRow);
+    document.body.appendChild(panel);
+    this.subPanel = panel;
+  }
+
+  private openSettingsPanel(): void {
+    this.subPanel?.remove();
+    const settings = this.saveSystem.loadSettings();
+    const panel = document.createElement('div');
+    panel.style.cssText = `
+      position:fixed;top:50%;left:calc(50% + 150px);transform:translateY(-50%);
+      background:rgba(10,15,25,0.97);border:1px solid #446;
+      border-radius:8px;padding:16px;z-index:901;color:#eee;
+      font:12px monospace;min-width:280px;
+    `;
+
+    const mkSlider = (label: string, value: number, onChange: (v: number) => void) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:10px';
+      const lbl = document.createElement('span');
+      lbl.style.cssText = 'flex:1;color:#bbb';
+      lbl.textContent = label;
+      const val = document.createElement('span');
+      val.style.cssText = 'width:32px;text-align:right;color:#fff';
+      val.textContent = Math.round(value * 100) + '%';
+      const slider = document.createElement('input');
+      slider.type = 'range'; slider.min = '0'; slider.max = '100';
+      slider.value = String(Math.round(value * 100));
+      slider.style.cssText = 'flex:2;accent-color:#5599ff';
+      slider.addEventListener('input', () => {
+        const v = parseInt(slider.value) / 100;
+        val.textContent = slider.value + '%';
+        onChange(v);
+      });
+      row.appendChild(lbl); row.appendChild(slider); row.appendChild(val);
+      return row;
+    };
+
+    const mkToggle = (label: string, checked: boolean, onChange: (v: boolean) => void) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px';
+      const lbl = document.createElement('span');
+      lbl.style.cssText = 'color:#bbb';
+      lbl.textContent = label;
+      const btn = document.createElement('button');
+      btn.textContent = checked ? 'ON' : 'OFF';
+      btn.style.cssText = `padding:3px 10px;background:${checked ? '#2a6e4a' : '#444'};color:#fff;border:none;border-radius:3px;cursor:pointer;font:11px monospace`;
+      btn.addEventListener('click', () => {
+        checked = !checked;
+        btn.textContent = checked ? 'ON' : 'OFF';
+        btn.style.background = checked ? '#2a6e4a' : '#444';
+        onChange(checked);
+      });
+      row.appendChild(lbl); row.appendChild(btn);
+      return row;
+    };
+
+    panel.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <span style="font-size:13px;font-weight:bold;color:#e2b96f">설정</span>
+        <button id="set-close" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:14px">✕</button>
+      </div>
+      <div id="set-body"></div>
+    `;
+
+    const body = panel.querySelector('#set-body') as HTMLDivElement;
+    body.appendChild(mkSlider('🔊 마스터 볼륨', settings.masterVolume, (v) => {
+      settings.masterVolume = v;
+      this.soundSystem?.setMasterVolume(v);
+      this.saveSystem.saveSettings(settings);
+      this.onSettingsChanged?.({ masterVolume: v });
+    }));
+    body.appendChild(mkSlider('🎵 BGM 볼륨', settings.bgmVolume, (v) => {
+      settings.bgmVolume = v;
+      this.soundSystem?.setBGMVolume(v);
+      this.saveSystem.saveSettings(settings);
+      this.onSettingsChanged?.({ bgmVolume: v });
+    }));
+    body.appendChild(mkSlider('🔔 효과음 볼륨', settings.sfxVolume, (v) => {
+      settings.sfxVolume = v;
+      this.soundSystem?.setSFXVolume(v);
+      this.saveSystem.saveSettings(settings);
+      this.onSettingsChanged?.({ sfxVolume: v });
+    }));
+    const hudSettings = this.getHudSettings?.() ?? { showFPS: false, showCoords: false };
+    body.appendChild(mkToggle('FPS 표시', hudSettings.showFPS, (v) => {
+      this.saveSystem.saveSettings({ ...settings, showFPS: v });
+      this.onSettingsChanged?.({ showFPS: v });
+    }));
+    body.appendChild(mkToggle('좌표 표시', hudSettings.showCoords, (v) => {
+      this.saveSystem.saveSettings({ ...settings, showCoords: v });
+      this.onSettingsChanged?.({ showCoords: v });
+    }));
+
+    panel.querySelector('#set-close')!.addEventListener('click', () => {
+      panel.remove();
+      this.subPanel = null;
+    });
+
     document.body.appendChild(panel);
     this.subPanel = panel;
   }

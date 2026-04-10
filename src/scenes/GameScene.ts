@@ -54,6 +54,8 @@ import { ChatBubbleManager } from '../ui/ChatBubble';
 import { SEASON_TREE_DENSITY } from '../systems/WeatherEffectSystem';
 import { CampfireSystem } from '../systems/CampfireSystem';
 import { CampfirePanel } from '../ui/CampfirePanel';
+import { NotifySystem } from '../systems/NotifySystem';
+import { LogPanel } from '../ui/LogPanel';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -222,6 +224,10 @@ export class GameScene extends Phaser.Scene {
   private campfirePanel!: CampfirePanel;
   private campfireWarmthNotified = false;
 
+  // 알림 & 로그 시스템
+  private notifySystem!: NotifySystem;
+  private logPanel!: LogPanel;
+
   // 날씨 효과
   private lastSeasonForWeather = '';
   private winterHintShown = false;
@@ -317,6 +323,14 @@ export class GameScene extends Phaser.Scene {
       this.showNotificationPopup('횃불이 곧 꺼집니다!', '#ffaa44');
       this.torchWarnedOnce = true;
     });
+
+    // 알림 시스템 초기화
+    this.notifySystem = new NotifySystem(() => {
+      const h = this.gameTime?.hour ?? 0;
+      const m = this.gameTime?.minute ?? 0;
+      return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+    });
+    this.logPanel = new LogPanel();
 
     // 모닥불 시스템 초기화
     this.campfireSystem = new CampfireSystem(this);
@@ -921,6 +935,15 @@ export class GameScene extends Phaser.Scene {
         this.chatInput.close();
         return;
       }
+      // 건설 배치 모드 중이면 취소
+      if (this.campfirePlacementMode) {
+        this.campfirePlacementMode = false;
+        return;
+      }
+      if (this.logPanel?.isOpen()) {
+        this.logPanel.close();
+        return;
+      }
       this.buildSystem.exitBuildMode();
       this.buildSystem.cancelBuild();
       this.buildAutoMoveTarget = null;
@@ -956,6 +979,12 @@ export class GameScene extends Phaser.Scene {
       if (active) this.chatLog.showFull();
     });
 
+    // L key: toggle event log panel
+    this.input.keyboard!.on('keydown-L', () => {
+      if (this.chatSystem.isInputActive()) return;
+      this.logPanel.toggle(this.notifySystem.getLog());
+    });
+
     // Enter key: open chat input (multiplayer only)
     this.input.keyboard!.on('keydown-ENTER', () => {
       if (this.chatSystem.isDisabled()) return;
@@ -981,6 +1010,19 @@ export class GameScene extends Phaser.Scene {
         this.scene.start('TitleScene');
       },
       this.isMultiplayer,
+      this.soundSystem,
+      () => {
+        const s = this.saveSystem.loadSettings();
+        return { showFPS: s.showFPS, showCoords: s.showCoords };
+      },
+      (partial) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (this.scene.get('UIScene') as any)?.applySettings?.(partial);
+      },
+    );
+    this.pauseMenu.setPauseCallbacks(
+      () => { this.scene.pause(); this.soundSystem.setBGMVolume(this.soundSystem.getBGMVolume() * 0.5); },
+      () => { this.scene.resume(); this.soundSystem.setBGMVolume(this.saveSystem.loadSettings().bgmVolume); },
     );
 
     // beforeunload 자동 저장
@@ -1546,6 +1588,9 @@ export class GameScene extends Phaser.Scene {
       if (this.chatLog.isHovered()) this.chatSystem.pauseFade();
       this.chatLog.render(this.chatSystem.getMessages());
     }
+
+    // 알림 시스템 업데이트
+    this.notifySystem?.update(delta);
   }
 
   spawnClickFeedback(wx: number, wy: number, color: string): void {
@@ -1660,6 +1705,8 @@ export class GameScene extends Phaser.Scene {
     this.chatLog?.destroy();
     this.campfirePanel?.close();
     this.campfireSystem?.destroy();
+    this.logPanel?.close();
+    this.notifySystem?.destroy();
   }
 
   // ── Map ──────────────────────────────────────────────────
@@ -2356,25 +2403,11 @@ export class GameScene extends Phaser.Scene {
     this.showNotificationPopup(`⬆ ${name} 숙련도 Lv.${level}!`, '#ffd700', true);
   }
 
-  showNotificationPopup(message: string, color = '#ffd700', large = false): void {
-    const existing = document.getElementById('notif-popup-' + message.slice(0, 10));
-    existing?.remove();
-
-    const popup = document.createElement('div');
-    popup.style.cssText = `
-      position: fixed; top: 40%; left: 50%; transform: translateX(-50%);
-      color: ${color}; font: ${large ? 'bold 14px' : '12px'} monospace; text-align: center;
-      background: rgba(0,0,0,0.7); padding: 6px 14px; border-radius: 4px;
-      z-index: 600; pointer-events: none; opacity: 1; transition: opacity 1.5s ease;
-      white-space: nowrap;
-    `;
-    popup.textContent = message;
-    document.body.appendChild(popup);
-
-    setTimeout(() => {
-      popup.style.opacity = '0';
-      setTimeout(() => popup.remove(), 1500);
-    }, 200);
+  showNotificationPopup(message: string, color = '#ffd700', _large = false): void {
+    // Route to NotifySystem for top-right toast display
+    if (this.notifySystem) {
+      this.notifySystem.showByColor(message, color);
+    }
   }
 
   // ── 광란 자동 공격 ───────────────────────────────────────────────────────────
