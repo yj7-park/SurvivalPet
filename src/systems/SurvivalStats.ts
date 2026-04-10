@@ -13,11 +13,18 @@ export class SurvivalStats {
   frenzyTimer = 0;
   frenzyCooldown = 0; // ms — 광란 종료 후 5초간 재진입 방지
 
-  private hungerDebuff = 0; // max HP reduction from starvation
+  private hungerDebuff = 0; // max HP reduction from starvation (set by HungerSystem)
 
   constructor(private stats: CharacterStats) {
     this.maxHp = stats.maxHp;
     this.hp = this.maxHp;
+  }
+
+  /** Called by HungerSystem each frame to apply the accumulated debuff */
+  setMaxHpDebuff(debuff: number): void {
+    this.hungerDebuff = debuff;
+    this.maxHp = Math.max(1, this.stats.maxHp - this.hungerDebuff);
+    this.hp = Math.min(this.hp, this.maxHp);
   }
 
   update(delta: number) {
@@ -28,15 +35,6 @@ export class SurvivalStats {
     this.hunger  = Math.max(0, this.hunger  - this.stats.hungerDecayPerDay  * scale);
     this.fatigue = Math.max(0, this.fatigue - this.stats.fatigueDecayPerDay * scale);
     this.action  = Math.max(0, this.action  - 20 * scale);
-
-    // Hunger → max HP debuff
-    if (this.hunger === 0) {
-      this.hungerDebuff = Math.min(this.stats.maxHp * 0.5, this.hungerDebuff + realSec * 0.5);
-    } else {
-      this.hungerDebuff = Math.max(0, this.hungerDebuff - realSec * (this.hunger / 100) * 0.2);
-    }
-    this.maxHp = Math.max(1, Math.round(this.stats.maxHp - this.hungerDebuff));
-    this.hp = Math.min(this.hp, this.maxHp);
 
     // Fatigue → forced sleep (SleepSystem handles recovery; isForcedSleep is set externally)
     if (this.fatigue === 0 && !this.isForcedSleep && !this.isFrenzy) {
@@ -76,6 +74,9 @@ export class SurvivalStats {
 
   /** 피로 10 이하 → 이동 속도 0.8배 */
   get fatigueSpeedMult(): number { return this.fatigue <= 10 ? 0.8 : 1.0; }
+
+  /** 허기 20 이하 → 이동 속도 0.9배 */
+  get hungerSpeedMult(): number { return this.hunger <= 20 ? 0.9 : 1.0; }
 
   get isIncapacitated(): boolean { return this.isForcedSleep || this.isFrenzy; }
 }

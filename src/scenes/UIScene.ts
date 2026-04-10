@@ -13,6 +13,7 @@ type GameSceneRef = {
   proficiency: import('../systems/ProficiencySystem').ProficiencySystem;
   equipmentSystem: import('../systems/EquipmentSystem').EquipmentSystem;
   multiplayerSys: import('../systems/MultiplayerSystem').MultiplayerSystem;
+  hungerSystem: import('../systems/HungerSystem').HungerSystem;
   isMultiplayer: boolean;
   seed: string;
   mapX: number;
@@ -40,6 +41,7 @@ export class UIScene extends Phaser.Scene {
   private hudCharStats!: Phaser.GameObjects.Text;
   private hudInventoryText!: Phaser.GameObjects.Text;
   private hudPlayerCount!: Phaser.GameObjects.Text;
+  private hudPoisonIcon!: Phaser.GameObjects.Text;
   private prevFrenzy = false;
 
   constructor() { super({ key: 'UIScene' }); }
@@ -99,6 +101,11 @@ export class UIScene extends Phaser.Scene {
       fontStyle: 'bold', backgroundColor: '#00000099', padding: { x: 5, y: 2 },
     }).setDepth(100).setVisible(false);
 
+    // 식중독 아이콘 (허기 바 오른쪽)
+    this.hudPoisonIcon = this.add.text(W - 16, by0 + 14, '🤢', {
+      fontSize: '11px', fontFamily: 'monospace',
+    }).setDepth(102).setOrigin(1, 0.5).setVisible(false);
+
     // ── 좌하단: 캐릭터 스탯 + 인벤토리 요약 ─────────────────
     this.hudCharStats = this.add.text(8, H - 20, '', {
       fontSize: '10px', color: '#aaaaaa', fontFamily: 'monospace',
@@ -117,6 +124,7 @@ export class UIScene extends Phaser.Scene {
       () => gs.isNearTable(),
       gs.equipmentSystem,
       gs.proficiency,
+      gs.hungerSystem,
     );
 
     this.equipmentPanel = new EquipmentPanel(
@@ -162,6 +170,22 @@ export class UIScene extends Phaser.Scene {
     this.hudStatBars.fatigue.fill.setSize(BAR_W * (s.fatigue / 100), 7);
     this.hudStatBars.action.fill.setSize(BAR_W * (s.action / 100), 7);
 
+    // 허기 게이지 색상 (정상→배고픔→허기→굶주림)
+    const hv = s.hunger;
+    const hungerColor = hv > 40 ? 0xe0a020 : hv > 20 ? 0xe0c020 : hv > 10 ? 0xe07010 : 0xe03030;
+    this.hudStatBars.hunger.fill.setFillStyle(hungerColor);
+    // 굶주림 단계 깜빡임
+    if (hv <= 10 && hv > 0) {
+      const blinkH = Math.floor(this.time.now / 300) % 2 === 0;
+      this.hudStatBars.hunger.fill.setVisible(blinkH);
+    } else {
+      this.hudStatBars.hunger.fill.setVisible(true);
+    }
+
+    // 식중독 아이콘
+    const isPoisoned = gs.hungerSystem?.isPoisoned() ?? false;
+    this.hudPoisonIcon.setVisible(isPoisoned);
+
     // 행복 수치 게이지 색상 (정상→주의→경고→위험)
     const av = s.action;
     const actionColor = av > 40 ? 0x40c060 : av > 20 ? 0xe0c020 : av > 10 ? 0xe06020 : 0xe03030;
@@ -198,7 +222,8 @@ export class UIScene extends Phaser.Scene {
     this.hudCharStats.setText(
       `STR:${c.str}  AGI:${c.agi}  CON:${c.con}  INT:${c.int}` +
       (s.isFrenzy ? '   \u26a0 FRENZY' : '') +
-      (s.isForcedSleep ? '   \ud83d\udca4 SLEEP' : ''),
+      (s.isForcedSleep ? '   \ud83d\udca4 SLEEP' : '') +
+      ((gs.hungerSystem?.isPoisoned()) ? '   🤢 POISON' : ''),
     );
 
     // 인벤토리 요약

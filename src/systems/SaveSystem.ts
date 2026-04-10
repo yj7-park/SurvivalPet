@@ -18,6 +18,8 @@ export interface CharacterSaveData {
   hunger: number;
   fatigue: number;
   action: number;
+  maxHpDebuff: number;
+  poisoning: { active: boolean; timeLeft: number };
   inventory: InventorySaveData;
   equipment: {
     weapon: string | null;
@@ -179,6 +181,13 @@ export class SaveSystem {
     }
     if (data.character && data.character['appearance'] === undefined) {
       data.character['appearance'] = 0;
+    }
+    // Migrate: add hunger system fields if missing
+    if (data.character && data.character['maxHpDebuff'] === undefined) {
+      data.character['maxHpDebuff'] = 0;
+    }
+    if (data.character && data.character['poisoning'] === undefined) {
+      data.character['poisoning'] = { active: false, timeLeft: 0 };
     }
     // Migrate: add visitedMaps/killedEnemies if missing
     const world = (data as Record<string, unknown>)['world'] as Record<string, unknown> | undefined;

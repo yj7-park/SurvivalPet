@@ -37,6 +37,7 @@ import { DurabilitySystem } from '../systems/DurabilitySystem';
 import { HoverTooltip } from '../ui/HoverTooltip';
 import { SleepSystem } from '../systems/SleepSystem';
 import { SleepOverlay } from '../ui/SleepOverlay';
+import { HungerSystem } from '../systems/HungerSystem';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -139,6 +140,13 @@ export class GameScene extends Phaser.Scene {
   // 피로 경고 추적 (한 번만 표시)
   private fatigueWarnedAt40 = false;
   private fatigueWarnedAt20 = false;
+
+  // 허기 시스템
+  hungerSystem = new HungerSystem();
+  // 허기 경고 추적 (한 번만 표시)
+  private hungerWarnedAt40 = false;
+  private hungerWarnedAt20 = false;
+  private hungerWarnedAt10 = false;
 
   // 행복 수치 & 광란
   private actionSystem = new ActionSystem();
@@ -287,6 +295,7 @@ export class GameScene extends Phaser.Scene {
       this.proficiency.addXP('building', 15);
       this.actionSystem.onActionDone('build', this.survival);
       this.survival.addFatigue(5); // 건설 피로
+      this.survival.hunger = Math.max(0, this.survival.hunger - 3); // 건설 허기
       this.commandQueue.completeCommand();
       this.processNextQueueCommand();
       if (this.isMultiplayer && struct) {
@@ -334,6 +343,9 @@ export class GameScene extends Phaser.Scene {
       // 활동별 피로 소모
       const fatigueMap: Record<string, number> = { woodcutting: 3, mining: 4, fishing: 1 };
       if (fatigueMap[type]) this.survival.addFatigue(fatigueMap[type]);
+      // 활동별 허기 소모
+      const hungerMap: Record<string, number> = { woodcutting: 3, mining: 4 };
+      if (hungerMap[type]) this.survival.hunger = Math.max(0, this.survival.hunger - hungerMap[type]);
     });
 
     // Spawn animals on current map
@@ -364,6 +376,7 @@ export class GameScene extends Phaser.Scene {
       this.proficiency.addXP('combat', 20);
       this.actionSystem.onActionDone('kill_enemy', this.survival);
       this.survival.addFatigue(2); // 전투 피로
+      this.survival.hunger = Math.max(0, this.survival.hunger - 1); // 전투 허기
     });
 
     // Pointer events — use ptr.worldX/worldY (Phaser applies camera matrix correctly)
@@ -767,6 +780,7 @@ export class GameScene extends Phaser.Scene {
     const effectiveDelta = this.sleepSystem.update(delta, this.survival, this.gameTime);
     this.gameTime.update(effectiveDelta);
     this.survival.update(effectiveDelta);
+    this.hungerSystem.update(effectiveDelta, this.survival, this.charStats);
     if (this.sleepOverlay.isVisible()) {
       this.sleepOverlay.update(this.survival, this.gameTime);
     }
@@ -794,6 +808,30 @@ export class GameScene extends Phaser.Scene {
       this.showNotificationPopup('😵 극도로 피곤합니다!', '#ff8844');
     } else if (this.survival.fatigue > 20) {
       this.fatigueWarnedAt20 = false;
+    }
+
+    // 허기 경고 단계
+    if (this.survival.hunger <= 40 && this.survival.hunger > 20 && !this.hungerWarnedAt40) {
+      this.hungerWarnedAt40 = true;
+      this.showNotificationPopup('🍖 배가 고픕니다', '#ffee44');
+    } else if (this.survival.hunger > 40) {
+      this.hungerWarnedAt40 = false;
+    }
+    if (this.survival.hunger <= 20 && this.survival.hunger > 10 && !this.hungerWarnedAt20) {
+      this.hungerWarnedAt20 = true;
+      this.showNotificationPopup('🍖 매우 배가 고픕니다!', '#ff8844');
+    } else if (this.survival.hunger > 20) {
+      this.hungerWarnedAt20 = false;
+    }
+    if (this.survival.hunger <= 10 && this.survival.hunger > 0 && !this.hungerWarnedAt10) {
+      this.hungerWarnedAt10 = true;
+      this.showNotificationPopup('🍖 굶주리고 있습니다!', '#ff4444');
+    } else if (this.survival.hunger > 10) {
+      this.hungerWarnedAt10 = false;
+    }
+    if (this.survival.hunger === 0 && this.hungerSystem.getMaxHpDebuff() > 0
+      && Math.floor(this.gameTime.getElapsed() / 75000) !== Math.floor((this.gameTime.getElapsed() - effectiveDelta) / 75000)) {
+      this.showNotificationPopup('💀 굶주림으로 최대 체력이 줄어들고 있습니다', '#cc2222');
     }
 
     // 수면 중 허기 0 → 강제 기상
@@ -995,7 +1033,7 @@ export class GameScene extends Phaser.Scene {
       || this.isRepairing
       || this.sleepSystem.isSleeping();
 
-    this.player.update(delta, suppressKeys, this.survival.fatigueSpeedMult);
+    this.player.update(delta, suppressKeys, this.survival.fatigueSpeedMult * this.survival.hungerSpeedMult);
     this.interaction.update(delta);
 
     // ── 깊이 정렬: Y 좌표 기반으로 캐릭터가 나무 뒤/앞에 표시되도록 ───
@@ -1907,6 +1945,8 @@ export class GameScene extends Phaser.Scene {
     this.survival.isForcedSleep = false;
     // Restore player sprite from sleeping rotation
     this.player.sprite.setAngle(0);
+    // 수면으로 식중독 해제
+    this.hungerSystem.clearPoisonOnWake();
 
     const msgs: Record<string, [string, string]> = {
       recovered: ['☀ 기상!', '#ffee44'],
@@ -1971,6 +2011,8 @@ export class GameScene extends Phaser.Scene {
         hunger: this.survival.hunger,
         fatigue: this.survival.fatigue,
         action: this.survival.action,
+        maxHpDebuff: this.hungerSystem.getMaxHpDebuff(),
+        poisoning: this.hungerSystem.serialize().poisoning,
         inventory: { slots: this.inventory.getSaveData() },
         equipment: { weapon: null, armor: slots.armor, shield: slots.shield },
         proficiency: this.proficiency.serialize(),
@@ -2016,6 +2058,12 @@ export class GameScene extends Phaser.Scene {
     this.survival.hunger = ch.hunger;
     this.survival.fatigue = ch.fatigue;
     this.survival.action = ch.action;
+
+    // 허기 시스템 복원
+    this.hungerSystem.deserialize({
+      maxHpDebuff: ch.maxHpDebuff ?? 0,
+      poisoning: ch.poisoning ?? { active: false, timeLeft: 0 },
+    });
 
     // 인벤토리 복원
     this.inventory.restore(ch.inventory.slots);

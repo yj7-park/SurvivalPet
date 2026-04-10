@@ -8,6 +8,8 @@ import { EquipmentSystem } from './EquipmentSystem';
 import { ARMOR_DEFS, SHIELD_DEFS } from '../config/equipment';
 import { RECIPE_ITEMS, RECIPE_ITEM_IDS } from '../config/recipeItems';
 import { ProficiencySystem, PROF_NAMES } from './ProficiencySystem';
+import { HungerSystem } from './HungerSystem';
+import { FOOD_DEFS } from '../config/foods';
 
 const STACK_LIMITS: Record<string, number> = {
   item_wood: 99,
@@ -71,24 +73,9 @@ const ITEM_NAMES: Record<string, string> = {
 };
 
 const WEAPON_ITEM_IDS = new Set(['item_bow', 'item_sword_wood', 'item_sword_stone', 'item_sword_iron']);
-const FOOD_ITEM_IDS   = new Set(['item_cooked_meat', 'item_cooked_fish', 'item_raw_meat', 'item_fish',
-                                  'item_fish_stew', 'item_meat_stew']);
+const FOOD_ITEM_IDS   = new Set(Object.keys(FOOD_DEFS));
 const ARMOR_ITEM_IDS  = new Set(Object.keys(ARMOR_DEFS));
 const SHIELD_ITEM_IDS = new Set(Object.keys(SHIELD_DEFS));
-
-const FOOD_RESTORE: Record<string, number> = {
-  item_fish:        15,
-  item_cooked_fish: 25,
-  item_raw_meat:    10,
-  item_cooked_meat: 35,
-  item_fish_stew:   40,
-  item_meat_stew:   50,
-};
-
-const FOOD_HEAL_HP: Record<string, number> = {
-  item_fish_stew:  30,
-  item_meat_stew:  20,
-};
 
 export class InventoryUI {
   private panel: HTMLDivElement | null = null;
@@ -101,6 +88,8 @@ export class InventoryUI {
   private equipmentSystem: EquipmentSystem | null = null;
   private proficiencySystem: ProficiencySystem | null = null;
 
+  private hungerSystem: HungerSystem | null = null;
+
   constructor(
     private scene: Phaser.Scene,
     private inventory: Inventory,
@@ -110,9 +99,11 @@ export class InventoryUI {
     private getNearTable: (() => boolean) | null = null,
     equipmentSystem: EquipmentSystem | null = null,
     proficiencySystem: ProficiencySystem | null = null,
+    hungerSystem: HungerSystem | null = null,
   ) {
     this.equipmentSystem = equipmentSystem;
     this.proficiencySystem = proficiencySystem;
+    this.hungerSystem = hungerSystem;
     const W = scene.scale.width;
     const H = scene.scale.height;
 
@@ -270,13 +261,15 @@ export class InventoryUI {
             const alreadyKnown = this.proficiencySystem?.isUnlockedByResearch(def.unlocksId);
             tooltip.textContent = alreadyKnown ? '이미 학습한 레시피' : `클릭: [${def.label}] 학습`;
           } else if (isFood) {
-            const restore = FOOD_RESTORE[key];
-            if (restore) {
+            const foodDef = FOOD_DEFS[key];
+            if (foodDef) {
               const nearTable = this.getNearTable?.() ?? false;
+              const restore = foodDef.hungerRecovery;
               const bonus = nearTable ? ` → ${Math.ceil(restore * 1.3)} (식탁+30%)` : '';
-              const healHp = FOOD_HEAL_HP[key] ?? 0;
-              const hpStr = healHp > 0 ? ` / HP+${healHp}` : '';
-              tooltip.textContent = `클릭: 먹기 (+${restore} 포만감${bonus}${hpStr})`;
+              const hpStr = foodDef.hpChange > 0 ? ` / HP+${foodDef.hpChange}` :
+                            foodDef.hpChange < 0 ? ` / HP${foodDef.hpChange}` : '';
+              const poisonWarn = foodDef.poisonChance > 0 ? ` ⚠ 식중독 ${Math.round(foodDef.poisonChance * 100)}%` : '';
+              tooltip.textContent = `클릭: 먹기 (+${restore} 포만감${bonus}${hpStr}${poisonWarn})`;
             } else {
               tooltip.textContent = '먹을 수 없습니다';
             }
@@ -376,25 +369,29 @@ export class InventoryUI {
   }
 
   private handleFoodClick(itemKey: string, tooltip: HTMLDivElement): void {
-    const baseRestore = FOOD_RESTORE[itemKey];
-    if (!baseRestore) {
+    const foodDef = FOOD_DEFS[itemKey];
+    if (!foodDef) {
       tooltip.textContent = '먹을 수 없습니다';
       return;
     }
     if (!this.inventory.has(itemKey, 1)) return;
 
     const nearTable = this.getNearTable?.() ?? false;
-    const restore = nearTable ? Math.ceil(baseRestore * 1.3) : baseRestore;
-
     this.inventory.remove(itemKey, 1);
-    this.survival.eat(restore);
 
-    const healHp = FOOD_HEAL_HP[itemKey] ?? 0;
-    if (healHp > 0) {
-      this.survival.hp = Math.min(this.survival.maxHp, this.survival.hp + healHp);
+    if (this.hungerSystem) {
+      const result = this.hungerSystem.eat(foodDef, this.survival, this.charStats, nearTable);
+      if (result.diningBonus) this.showTableBonusPopup();
+      if (result.poisoned) this.showNotice('🤢 식중독에 걸렸습니다!');
+    } else {
+      // Fallback if no hungerSystem
+      const restore = nearTable ? Math.ceil(foodDef.hungerRecovery * 1.3) : foodDef.hungerRecovery;
+      this.survival.eat(restore);
+      if (foodDef.hpChange > 0) {
+        this.survival.hp = Math.min(this.survival.maxHp, this.survival.hp + foodDef.hpChange);
+      }
+      if (nearTable) this.showTableBonusPopup();
     }
-
-    if (nearTable) this.showTableBonusPopup();
 
     if (this.panel) this.refreshPanel();
   }
