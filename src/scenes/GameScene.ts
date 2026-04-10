@@ -77,6 +77,11 @@ import { StarLayer } from '../rendering/StarLayer';
 import { PostFxSystem } from '../systems/PostFxSystem';
 import { MultiplayerVisualSystem } from '../systems/MultiplayerVisualSystem';
 import { EMOTE_COMMANDS } from '../systems/RespawnEffect';
+import { SkyLayer } from '../systems/SkyLayer';
+import { WarmLightLayer } from '../systems/WarmLightLayer';
+import { FlickerSystem } from '../systems/FlickerSystem';
+import { IndoorLightingSystem } from '../systems/IndoorLightingSystem';
+import { DoorAnimator, registerDoorTextures } from '../systems/DoorAnimator';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -288,6 +293,11 @@ export class GameScene extends Phaser.Scene {
   private seasonCard = new SeasonCard();
   private starLayer?: StarLayer;
   private postFxSystem?: PostFxSystem;
+  private skyLayer?: SkyLayer;
+  private warmLightLayer?: WarmLightLayer;
+  private flickerSystem?: FlickerSystem;
+  private indoorLightingSystem?: IndoorLightingSystem;
+  private doorAnimator?: DoorAnimator;
 
   // Other players
   private multiplayerVisual?: MultiplayerVisualSystem;
@@ -375,6 +385,12 @@ export class GameScene extends Phaser.Scene {
     this.transitionSystem = new TransitionSystem(this, this.scale.width, this.scale.height);
     this.transitionSystem.playIntro();
     this.starLayer = new StarLayer(this, this.seed);
+    this.skyLayer = new SkyLayer(this, this.seed);
+    this.warmLightLayer = new WarmLightLayer(this);
+    this.flickerSystem = new FlickerSystem();
+    this.indoorLightingSystem = new IndoorLightingSystem(this);
+    this.doorAnimator = new DoorAnimator(this);
+    registerDoorTextures(this);
 
     this.cameras.main.startFollow(this.player.sprite, true);
     this.cameras.main.setZoom(2);
@@ -1813,10 +1829,11 @@ export class GameScene extends Phaser.Scene {
     this.mapTransition.check(this.player.sprite.x, this.player.sprite.y, this.mapX, this.mapY);
     this.miniMap.update(delta);
 
-    // Sky tint + stars
+    // Sky tint + stars + sky layer (sun/moon/moonlight)
     const skyHour = this.gameTime.hour + this.gameTime.minute / 60;
     this.transitionSystem?.update(skyHour, this.gameTime.season);
     this.starLayer?.update(skyHour, delta);
+    this.skyLayer?.update(skyHour, this.gameTime.day);
 
     // 포스트 FX 업데이트
     this.postFxSystem?.update(delta, {
@@ -1879,6 +1896,22 @@ export class GameScene extends Phaser.Scene {
       wxm.lightRadius,
       wxm.torchDuration,
     );
+
+    // 실내 조명 분위기
+    this.indoorLightingSystem?.applyIndoorAtmosphere(
+      this.playerIsIndoor,
+      this.campfireSystem.isWarm(this.player.sprite.x, this.player.sprite.y),
+      this.lightSystem.hasTorch(),
+      this.lightSystem.getDarknessAlpha(),
+    );
+
+    // 따뜻한 광원 틴트 레이어
+    this.warmLightLayer?.update(
+      this.lightSystem.getAllLights(),
+      this.cameras.main,
+      this.lightSystem.getDarknessAlpha(),
+    );
+
     if (this.isMultiplayer) {
       const isMoving = this.player.isMovingByKeyboard() || this.combat.tracking;
       this.multiplayerSys.uploadState(
@@ -2041,6 +2074,9 @@ export class GameScene extends Phaser.Scene {
     this.seasonCard?.destroy();
     this.starLayer?.destroy();
     this.postFxSystem?.destroy();
+    this.skyLayer?.destroy();
+    this.warmLightLayer?.destroy();
+    this.indoorLightingSystem?.destroy();
     this.multiplayerVisual?.destroy();
     this.weather?.destroy();
     this.charRenderer?.destroy();
@@ -2932,6 +2968,14 @@ export class GameScene extends Phaser.Scene {
     const isOpen = this.doorSystem.isOpen(buildingId);
     this.updateDoorSprite(buildingId, material, isOpen);
     this.soundSystem.play(isOpen ? 'door_open' : 'door_close');
+    const doorStruct = this.buildSystem.getAt(
+      parseInt(buildingId.split(',')[0]),
+      parseInt(buildingId.split(',')[1]),
+    );
+    if (doorStruct) {
+      if (isOpen) this.doorAnimator?.open(doorStruct.sprite as Phaser.GameObjects.Sprite);
+      else this.doorAnimator?.close(doorStruct.sprite as Phaser.GameObjects.Sprite);
+    }
   }
 
   private updateDoorSprite(buildingId: string, material: 'wood' | 'stone', open: boolean): void {

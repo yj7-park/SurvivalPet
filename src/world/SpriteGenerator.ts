@@ -1956,6 +1956,51 @@ function drawCampfire(state: 'large' | 'medium' | 'small' | 'ash'): HTMLCanvasEl
   return c;
 }
 
+// ── Torch flame spritesheet (4 frames, 16×24px each, arranged horizontally) ──
+
+function drawTorchFlameSheet(): HTMLCanvasElement {
+  const FW = 16, FH = 24, FRAMES = 4;
+  const c = document.createElement('canvas');
+  c.width = FW * FRAMES; c.height = FH;
+  const ctx = c.getContext('2d')!;
+
+  const offsets = [0, -2, 0, 2];
+  const widths  = [5, 4, 7, 4];
+
+  for (let frame = 0; frame < FRAMES; frame++) {
+    const bx = frame * FW;
+    // 횃불 자루
+    ctx.fillStyle = '#5a3a10';
+    ctx.fillRect(bx + 6, 16, 4, 8);
+    // 횃불 머리 (숯)
+    ctx.fillStyle = '#3a2808';
+    ctx.fillRect(bx + 5, 13, 6, 4);
+    // 불꽃 그라디언트
+    const grad = ctx.createLinearGradient(bx, 12, bx, 0);
+    grad.addColorStop(0.0, 'rgba(240,100,10,0.95)');
+    grad.addColorStop(0.4, 'rgba(255,180,20,0.9)');
+    grad.addColorStop(0.75,'rgba(255,240,100,0.8)');
+    grad.addColorStop(1.0, 'rgba(255,255,220,0.0)');
+    ctx.fillStyle = grad;
+
+    const ox = offsets[frame], fw = widths[frame];
+    const cx2 = bx + FW / 2;
+    ctx.beginPath();
+    ctx.moveTo(cx2 + ox - fw / 2, 13);
+    ctx.quadraticCurveTo(cx2 + ox - fw * 0.8, 6, cx2 + ox, 0);
+    ctx.quadraticCurveTo(cx2 + ox + fw * 0.8, 6, cx2 + ox + fw / 2, 13);
+    ctx.closePath();
+    ctx.fill();
+
+    // 코어
+    ctx.fillStyle = 'rgba(255,255,200,0.6)';
+    ctx.beginPath();
+    ctx.ellipse(cx2 + ox, 9, fw * 0.25, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  return c;
+}
+
 // ── Farming sprites ────────────────────────────────────────────────────────────
 
 function drawFarmland(wet: boolean): HTMLCanvasElement {
@@ -2451,4 +2496,20 @@ export function registerTextures(scene: Phaser.Scene): void {
 
   // Title logo
   scene.textures.addCanvas('title_logo', drawTitleLogo());
+
+  // Torch flame spritesheet (4 frames × 16×24px)
+  if (!scene.textures.exists('torch_sheet')) {
+    const torchCanvas = drawTorchFlameSheet();
+    scene.textures.addCanvas('torch_sheet', torchCanvas);
+    const tex = scene.textures.get('torch_sheet');
+    for (let i = 0; i < 4; i++) {
+      tex.add(i, 0, i * 16, 0, 16, 24);
+    }
+    scene.anims.create({
+      key: 'torch_burn',
+      frames: scene.anims.generateFrameNumbers('torch_sheet', { start: 0, end: 3 }),
+      frameRate: 8,
+      repeat: -1,
+    });
+  }
 }

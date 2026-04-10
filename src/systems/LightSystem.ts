@@ -59,6 +59,7 @@ export class LightSystem {
 
   getDarknessAlpha(): number { return this.darknessAlpha; }
   isNight(): boolean { return this.darknessAlpha > 0.3; }
+  getAllLights(): LightSource[] { return [...this.lights.values()]; }
 
   update(
     delta: number,
