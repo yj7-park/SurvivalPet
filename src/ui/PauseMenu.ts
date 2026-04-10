@@ -33,6 +33,7 @@ export class PauseMenu {
     private onCollectSaveData: () => SaveData,
     private onLoadGame: (saveData: SaveData) => void,
     private onReturnToTitle: () => void,
+    private isMultiplayer = false,
   ) {}
 
   toggle(): void {
@@ -65,8 +66,10 @@ export class PauseMenu {
       return btn;
     };
 
-    overlay.appendChild(makeBtn('저장하기', '#2a4a2a', () => this.openSavePanel()));
-    overlay.appendChild(makeBtn('불러오기', '#2a3a4a', () => this.openLoadPanel()));
+    if (!this.isMultiplayer) {
+      overlay.appendChild(makeBtn('저장하기', '#2a4a2a', () => this.openSavePanel()));
+      overlay.appendChild(makeBtn('불러오기', '#2a3a4a', () => this.openLoadPanel()));
+    }
     overlay.appendChild(makeBtn('타이틀로', '#3a2a2a', () => {
       this.openReturnConfirm();
     }));

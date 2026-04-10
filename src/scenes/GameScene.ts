@@ -4,7 +4,8 @@ import { Player } from '../entities/Player';
 import { CharacterStats } from '../entities/CharacterStats';
 import { SurvivalStats } from '../systems/SurvivalStats';
 import { GameTime } from '../systems/GameTime';
-import { MultiplayerSync, RemotePlayer } from '../systems/MultiplayerSync';
+import { MultiplayerSystem, RemotePlayerState } from '../systems/MultiplayerSystem';
+import { PlayerListPanel } from '../ui/PlayerListPanel';
 import { registerTextures } from '../world/SpriteGenerator';
 import { AnimalManager } from '../systems/AnimalManager';
 import { InteractionSystem } from '../systems/InteractionSystem';
@@ -58,7 +59,9 @@ export class GameScene extends Phaser.Scene {
   private tileRT!: Phaser.GameObjects.RenderTexture;
   private mapGenerator!: MapGenerator;
   private player!: Player;
-  private multiplayer!: MultiplayerSync;
+  multiplayerSys!: MultiplayerSystem;
+  isMultiplayer = false;
+  private playerListPanel!: PlayerListPanel;
 
   private preloadedMaps = new Map<string, ReturnType<MapGenerator['generateMap']>>();
   private currentTiles: TileType[][] = [];
@@ -139,7 +142,11 @@ export class GameScene extends Phaser.Scene {
   private treeSprites = new Map<string, Phaser.GameObjects.Image>();
 
   // Other players
-  private otherPlayerSprites = new Map<string, Phaser.GameObjects.Sprite>();
+  private remotePlayerDisplays = new Map<string, {
+    sprite: Phaser.GameObjects.Sprite;
+    nameLabel: Phaser.GameObjects.Text;
+    statusLabel: Phaser.GameObjects.Text;
+  }>();
 
   constructor() { super({ key: 'GameScene' }); }
 
@@ -150,6 +157,7 @@ export class GameScene extends Phaser.Scene {
     appearance?: number;
     characterStats?: { str: number; agi: number; con: number; int: number };
     saveSlot?: number;
+    isMultiplayer?: boolean;
   }) {
     this.seed = data.seed;
     this.pendingSaveData = data.saveData ?? null;
@@ -171,6 +179,7 @@ export class GameScene extends Phaser.Scene {
     if (data.saveSlot !== undefined) {
       this.saveSystem.setLastUsedSlot(data.saveSlot);
     }
+    this.isMultiplayer = data.isMultiplayer ?? false;
     this.autoSaveTimer = 0;
     this.clearedTrees = [];
     this.clearedRocks = [];
@@ -205,8 +214,8 @@ export class GameScene extends Phaser.Scene {
       .setDepth(5).setVisible(false);
     this.frenzyRng = new SeededRandom(`${this.seed}_frenzy`);
 
-    this.multiplayer = new MultiplayerSync(this.seed, playerId);
-    this.multiplayer.onPlayersUpdate((players) => this.updateOtherPlayers(players));
+    this.multiplayerSys = new MultiplayerSystem(this.seed, playerId);
+    this.multiplayerSys.setLocalInfo(this.characterName, this.pendingAppearance);
 
     this.inventory = new Inventory();
     this.animalMgr = new AnimalManager();
@@ -217,15 +226,26 @@ export class GameScene extends Phaser.Scene {
     this.commandQueue = new CommandQueue();
 
     // 건설 완료 시 큐 진행 + XP + 행복
-    this.buildSystem.setBuildCompleteCallback(() => {
+    this.buildSystem.setBuildCompleteCallback((struct) => {
       this.proficiency.addXP('building', 15);
       this.actionSystem.onActionDone('build', this.survival);
       this.commandQueue.completeCommand();
       this.processNextQueueCommand();
+      if (this.isMultiplayer && struct) {
+        const fbId = this.multiplayerSys.uploadBuildingAdded({
+          type: struct.defName, mapX: this.mapX, mapY: this.mapY,
+          tileX: struct.tileX, tileY: struct.tileY,
+          durability: struct.durability, material: struct.material, builtBy: playerId,
+        });
+        if (fbId) this.buildSystem.setFirebaseId(struct.tileX, struct.tileY, fbId);
+      }
     });
-    this.buildSystem.setDemolishCompleteCallback(() => {
+    this.buildSystem.setDemolishCompleteCallback((info) => {
       this.proficiency.addXP('building', 8);
       this.actionSystem.onActionDone('demolish', this.survival);
+      if (this.isMultiplayer && info.firebaseId) {
+        this.multiplayerSys.uploadBuildingRemoved(info.firebaseId);
+      }
     });
     this.commandQueueUI = new CommandQueueUI(this.commandQueue);
     this.shelfUI = new ShelfUI();
@@ -554,14 +574,16 @@ export class GameScene extends Phaser.Scene {
         this.scene.restart({ seed: saveData.seed, saveData });
       },
       () => {
+        void this.multiplayerSys.leaveRoom();
         this.scene.stop('UIScene');
         this.scene.start('TitleScene');
       },
+      this.isMultiplayer,
     );
 
     // beforeunload 자동 저장
     this.beforeUnloadHandler = () => {
-      this.saveSystem.saveAuto(this.collectSaveData());
+      if (!this.isMultiplayer) this.saveSystem.saveAuto(this.collectSaveData());
     };
     window.addEventListener('beforeunload', this.beforeUnloadHandler);
 
@@ -572,6 +594,61 @@ export class GameScene extends Phaser.Scene {
       this.restoreFromSaveData(this.pendingSaveData);
       this.pendingSaveData = null;
     }
+
+    // 멀티플레이어 초기화
+    if (this.isMultiplayer) {
+      void this.initMultiplayer(playerId);
+    }
+  }
+
+  private async initMultiplayer(playerId: string): Promise<void> {
+    this.multiplayerSys.onPlayersChanged((players) => this.updateOtherPlayers(players));
+    this.multiplayerSys.onBuildingAdded((entry) => {
+      if (entry.mapX !== this.mapX || entry.mapY !== this.mapY) return;
+      if (!this.buildSystem.getAt(entry.tileX, entry.tileY)) {
+        this.buildSystem.addRemote(entry);
+      } else {
+        this.buildSystem.setFirebaseId(entry.tileX, entry.tileY, entry.id);
+      }
+    });
+    this.multiplayerSys.onBuildingRemoved((_id, mapX, mapY, tileX, tileY) => {
+      if (mapX !== this.mapX || mapY !== this.mapY) return;
+      this.buildSystem.removeStructureAt(tileX, tileY);
+    });
+    this.multiplayerSys.onTreeCut((mapX, mapY, tileX, tileY) => {
+      if (mapX !== this.mapX || mapY !== this.mapY) return;
+      if (this.currentTiles[tileY]?.[tileX] !== undefined) {
+        this.clearTile(tileX, tileY);
+      }
+    });
+    this.multiplayerSys.onRockMined((mapX, mapY, tileX, tileY) => {
+      if (mapX !== this.mapX || mapY !== this.mapY) return;
+      if (this.currentTiles[tileY]?.[tileX] !== undefined) {
+        this.clearTile(tileX, tileY);
+      }
+    });
+
+    await this.multiplayerSys.joinRoom({
+      name: this.characterName, skin: this.pendingAppearance,
+      x: this.player.sprite.x, y: this.player.sprite.y,
+      mapX: this.mapX, mapY: this.mapY,
+      hp: this.survival.hp, hunger: this.survival.hunger, fatigue: this.survival.fatigue,
+      facing: this.player.dir, weapon: null,
+    });
+
+    this.playerListPanel = new PlayerListPanel(
+      this.multiplayerSys,
+      this.characterName,
+      () => this.survival.hp,
+      () => this.survival.hunger,
+    );
+    this.input.keyboard!.on('keydown-TAB', (e: KeyboardEvent) => {
+      e.preventDefault();
+      this.playerListPanel.toggle();
+    });
+    this.input.keyboard!.on('keyup-TAB', () => {
+      // Keep open until toggle
+    });
   }
 
   update(time: number, delta: number) {
@@ -811,13 +888,18 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.checkMapTransition();
-    this.multiplayer.sync(
-      time,
-      this.player.sprite.x, this.player.sprite.y,
-      this.mapX, this.mapY,
-      this.player.dir,
-      this.survival.hp,
-    );
+    if (this.isMultiplayer) {
+      const isMoving = this.player.isMovingByKeyboard() || this.combat.tracking;
+      this.multiplayerSys.uploadState(
+        time,
+        this.player.sprite.x, this.player.sprite.y,
+        this.mapX, this.mapY,
+        this.player.dir, isMoving,
+        this.survival.hp, this.survival.hunger, this.survival.fatigue,
+        this.survival.isFrenzy, null,
+      );
+      this.multiplayerSys.update(delta);
+    }
   }
 
   spawnClickFeedback(wx: number, wy: number, color: string): void {
@@ -914,7 +996,8 @@ export class GameScene extends Phaser.Scene {
     window.removeEventListener('beforeunload', this.beforeUnloadHandler);
     this.pauseMenu?.close();
     this.scene.stop('UIScene');
-    this.multiplayer.destroy();
+    this.playerListPanel?.destroy();
+    void this.multiplayerSys?.leaveRoom();
     this.interaction?.destroy();
     this.animalMgr?.destroyAll();
     this.closeBuildPanel();
@@ -946,8 +1029,8 @@ export class GameScene extends Phaser.Scene {
     }
 
     // clear other player sprites on map change
-    this.otherPlayerSprites.forEach(s => s.destroy());
-    this.otherPlayerSprites.clear();
+    this.remotePlayerDisplays.forEach(d => { d.sprite.destroy(); d.nameLabel.destroy(); d.statusLabel.destroy(); });
+    this.remotePlayerDisplays.clear();
     this.clearedTrees = [];
     this.clearedRocks = [];
 
@@ -973,8 +1056,10 @@ export class GameScene extends Phaser.Scene {
       const key = `${tx},${ty}`;
       this.treeSprites.get(key)?.destroy();
       this.treeSprites.delete(key);
+      if (this.isMultiplayer) this.multiplayerSys.uploadTreeCut(this.mapX, this.mapY, tx, ty);
     } else if (originalType === TileType.Rock) {
       this.clearedRocks.push({ tx, ty });
+      if (this.isMultiplayer) this.multiplayerSys.uploadRockMined(this.mapX, this.mapY, tx, ty);
     }
 
     // 해당 타일 지면을 dirt로 다시 그림
@@ -1063,22 +1148,36 @@ export class GameScene extends Phaser.Scene {
 
   // ── Multiplayer ──────────────────────────────────────────
 
-  private updateOtherPlayers(players: RemotePlayer[]) {
+  private updateOtherPlayers(players: RemotePlayerState[]) {
     const seen = new Set<string>();
     for (const p of players) {
       if (p.mapX !== this.mapX || p.mapY !== this.mapY) continue;
       seen.add(p.id);
-      let sprite = this.otherPlayerSprites.get(p.id);
-      if (!sprite) {
-        sprite = this.add.sprite(p.x, p.y, `char_${p.dir}`).setDepth(2).setAlpha(0.8);
-        this.otherPlayerSprites.set(p.id, sprite);
+      let display = this.remotePlayerDisplays.get(p.id);
+      if (!display) {
+        const sprite = this.add.sprite(p.renderX, p.renderY, `char_${p.skin}_${p.facing}`)
+          .setDepth(2).setAlpha(0.85);
+        const nameLabel = this.add.text(p.renderX, p.renderY - 20, p.name, {
+          fontSize: '9px', color: '#fff', fontFamily: 'monospace',
+          stroke: '#000', strokeThickness: 2,
+        }).setDepth(3).setOrigin(0.5);
+        const statusLabel = this.add.text(p.renderX, p.renderY - 12, '', {
+          fontSize: '8px', color: '#aaa', fontFamily: 'monospace',
+        }).setDepth(3).setOrigin(0.5);
+        display = { sprite, nameLabel, statusLabel };
+        this.remotePlayerDisplays.set(p.id, display);
       }
-      sprite.setPosition(p.x, p.y);
-      sprite.setTexture(`char_${p.dir}`);
+      display.sprite.setPosition(p.renderX, p.renderY).setTexture(`char_${p.skin}_${p.facing}`);
+      display.nameLabel.setPosition(p.renderX, p.renderY - 20).setText(p.name)
+        .setColor(p.frenzy ? '#ff6666' : '#fff');
+      display.statusLabel.setPosition(p.renderX, p.renderY - 12)
+        .setText(`❤${Math.ceil(p.hp)} 🍖${Math.ceil(p.hunger)}${p.frenzy ? ' ⚡' : ''}`);
     }
-    // Remove stale sprites
-    this.otherPlayerSprites.forEach((sprite, id) => {
-      if (!seen.has(id)) { sprite.destroy(); this.otherPlayerSprites.delete(id); }
+    this.remotePlayerDisplays.forEach((disp, id) => {
+      if (!seen.has(id)) {
+        disp.sprite.destroy(); disp.nameLabel.destroy(); disp.statusLabel.destroy();
+        this.remotePlayerDisplays.delete(id);
+      }
     });
   }
 

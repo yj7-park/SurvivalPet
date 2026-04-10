@@ -149,10 +149,13 @@ export class TitleScene extends Phaser.Scene {
     this.settingsPanel.close();
   }
 
+  private pendingIsMultiplayer = false;
+
   private openSeedScreen(): void {
     this.seedScreen.open(
-      (seed: string) => {
+      (seed: string, isMultiplayer: boolean) => {
         this.pendingSeed = seed;
+        this.pendingIsMultiplayer = isMultiplayer;
         this.charScreen.open(
           (charData: CharacterData) => this.openSlotSelect(charData),
           () => this.openSeedScreen(),
@@ -214,6 +217,7 @@ export class TitleScene extends Phaser.Scene {
           appearance: charData.appearance,
           characterStats: charData.stats,
           isLoad: false,
+          isMultiplayer: this.pendingIsMultiplayer,
         });
       };
       panel.appendChild(row);

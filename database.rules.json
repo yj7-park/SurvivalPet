@@ -1,0 +1,34 @@
+{
+  "rules": {
+    "rooms": {
+      "$seed": {
+        "players": {
+          "$playerId": {
+            ".read": "auth == null || auth != null",
+            ".write": "auth == null || auth != null"
+          }
+        },
+        "world": {
+          "buildings": {
+            ".read": "auth == null || auth != null",
+            "$buildingId": {
+              ".write": "auth == null || auth != null"
+            }
+          },
+          "treeCuts": {
+            ".read": "auth == null || auth != null",
+            "$entryId": {
+              ".write": "auth == null || auth != null"
+            }
+          },
+          "rockMines": {
+            ".read": "auth == null || auth != null",
+            "$entryId": {
+              ".write": "auth == null || auth != null"
+            }
+          }
+        }
+      }
+    }
+  }
+}

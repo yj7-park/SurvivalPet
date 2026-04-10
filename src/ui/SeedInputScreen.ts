@@ -1,9 +1,10 @@
 import { generateSeed } from '../utils/seedRandom';
+import { MultiplayerSystem } from '../systems/MultiplayerSystem';
 
 export class SeedInputScreen {
   private overlay: HTMLDivElement | null = null;
 
-  open(onNext: (seed: string) => void, onBack: () => void): void {
+  open(onNext: (seed: string, isMultiplayer: boolean) => void, onBack: () => void): void {
     this.close();
 
     const randomSeed = generateSeed();
@@ -23,7 +24,7 @@ export class SeedInputScreen {
       </div>
 
       <div style="margin-bottom:6px;color:#9ab;font-size:11px">월드 Seed</div>
-      <div style="display:flex;gap:8px;margin-bottom:8px">
+      <div style="display:flex;gap:8px;margin-bottom:6px">
         <input id="si-seed" type="text" maxlength="12" value="${randomSeed}"
           style="flex:1;padding:10px;font:14px monospace;background:#0f1923;
                  color:#e8d5b0;border:1px solid #446;border-radius:4px;outline:none" />
@@ -32,19 +33,41 @@ export class SeedInputScreen {
           🎲 랜덤
         </button>
       </div>
-      <div style="color:#668;font-size:11px;margin-bottom:20px">
+      <div style="color:#668;font-size:11px;margin-bottom:6px">
         같은 Seed = 같은 맵이 생성됩니다
       </div>
+      <div id="si-count" style="color:#8ac;font-size:11px;margin-bottom:18px;min-height:16px"></div>
 
-      <div style="display:flex;justify-content:flex-end">
-        <button id="si-next" style="padding:10px 24px;background:#2a6e4a;color:#fff;
-                 border:none;border-radius:4px;cursor:pointer;font:13px monospace">
-          다음 →
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="si-solo" style="padding:10px 18px;background:#2a6e4a;color:#fff;
+                 border:none;border-radius:4px;cursor:pointer;font:12px monospace">
+          혼자 플레이 →
+        </button>
+        <button id="si-multi" style="padding:10px 18px;background:#4a4a8a;color:#adf;
+                 border:1px solid #446;border-radius:4px;cursor:pointer;font:12px monospace">
+          멀티플레이 →
         </button>
       </div>
     `;
 
     const seedInput = overlay.querySelector<HTMLInputElement>('#si-seed')!;
+    const countDiv = overlay.querySelector<HTMLDivElement>('#si-count')!;
+
+    let countTimeout: ReturnType<typeof setTimeout> | null = null;
+    const refreshCount = () => {
+      const seed = seedInput.value.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!seed) { countDiv.textContent = ''; return; }
+      MultiplayerSystem.getPlayerCount(seed).then(n => {
+        if (n > 0) countDiv.textContent = `현재 이 Seed의 접속자: ${n}명`;
+        else countDiv.textContent = '';
+      });
+    };
+
+    seedInput.addEventListener('input', () => {
+      if (countTimeout) clearTimeout(countTimeout);
+      countTimeout = setTimeout(refreshCount, 600);
+    });
+    setTimeout(refreshCount, 300);
 
     overlay.querySelector('#si-x')!.addEventListener('click', () => {
       this.close();
@@ -53,17 +76,26 @@ export class SeedInputScreen {
 
     overlay.querySelector('#si-rand')!.addEventListener('click', () => {
       seedInput.value = generateSeed();
+      refreshCount();
     });
 
-    overlay.querySelector('#si-next')!.addEventListener('click', () => {
+    const getSeed = () => {
       let seed = seedInput.value.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
       if (!seed) seed = generateSeed();
+      return seed;
+    };
+
+    overlay.querySelector('#si-solo')!.addEventListener('click', () => {
       this.close();
-      onNext(seed);
+      onNext(getSeed(), false);
+    });
+    overlay.querySelector('#si-multi')!.addEventListener('click', () => {
+      this.close();
+      onNext(getSeed(), true);
     });
 
     seedInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') (overlay.querySelector('#si-next') as HTMLButtonElement).click();
+      if (e.key === 'Enter') onNext(getSeed(), false);
     });
 
     document.body.appendChild(overlay);

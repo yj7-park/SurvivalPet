@@ -12,6 +12,8 @@ type GameSceneRef = {
   weather: import('../systems/WeatherSystem').WeatherSystem;
   proficiency: import('../systems/ProficiencySystem').ProficiencySystem;
   equipmentSystem: import('../systems/EquipmentSystem').EquipmentSystem;
+  multiplayerSys: import('../systems/MultiplayerSystem').MultiplayerSystem;
+  isMultiplayer: boolean;
   seed: string;
   mapX: number;
   mapY: number;
@@ -37,6 +39,7 @@ export class UIScene extends Phaser.Scene {
   private hudFrenzyCountdown!: Phaser.GameObjects.Text;
   private hudCharStats!: Phaser.GameObjects.Text;
   private hudInventoryText!: Phaser.GameObjects.Text;
+  private hudPlayerCount!: Phaser.GameObjects.Text;
   private prevFrenzy = false;
 
   constructor() { super({ key: 'UIScene' }); }
@@ -84,8 +87,14 @@ export class UIScene extends Phaser.Scene {
       action:  makebar(by0 + 42, 0x40c060, 'Action'),
     };
 
+    // 멀티플레이 접속자 수 (우상단, 스탯 바 아래)
+    this.hudPlayerCount = this.add.text(W - 110, by0 + 58, '', {
+      fontSize: '10px', color: '#7ab', fontFamily: 'monospace',
+      backgroundColor: '#00000088', padding: { x: 4, y: 2 },
+    }).setDepth(100).setVisible(false);
+
     // 광란 카운트다운 텍스트 (우상단)
-    this.hudFrenzyCountdown = this.add.text(W - 110, by0 + 58, '', {
+    this.hudFrenzyCountdown = this.add.text(W - 110, by0 + 72, '', {
       fontSize: '12px', color: '#ff4444', fontFamily: 'monospace',
       fontStyle: 'bold', backgroundColor: '#00000099', padding: { x: 5, y: 2 },
     }).setDepth(100).setVisible(false);
@@ -207,6 +216,14 @@ export class UIScene extends Phaser.Scene {
       this.frenzyOverlay.setAlpha(pulse);
     } else {
       this.frenzyOverlay.setAlpha(0);
+    }
+
+    // 멀티플레이 접속자 수
+    if (gs.isMultiplayer) {
+      const total = gs.multiplayerSys.getAllRemotePlayers().length + 1;
+      this.hudPlayerCount.setText(`🌐 ${total}명 접속 중`).setVisible(true);
+    } else {
+      this.hudPlayerCount.setVisible(false);
     }
 
     // 인벤토리 UI 업데이트 (무기 HUD 포함)

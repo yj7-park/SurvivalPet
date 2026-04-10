@@ -9,6 +9,7 @@ interface LoadingData {
   characterName?: string;
   appearance?: number;
   characterStats?: { str: number; agi: number; con: number; int: number };
+  isMultiplayer?: boolean;
 }
 
 const STEPS = [
@@ -99,6 +100,7 @@ export class LoadingScene extends Phaser.Scene {
       appearance: d.appearance,
       characterStats: d.characterStats,
       saveSlot: d.saveSlot,
+      isMultiplayer: d.isMultiplayer ?? false,
     });
   }
 }

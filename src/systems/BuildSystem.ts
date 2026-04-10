@@ -79,7 +79,7 @@ export class BuildSystem {
   private buildProgressMs = 0;
   private buildProgressBg!: Phaser.GameObjects.Rectangle;
   private buildProgressFill!: Phaser.GameObjects.Rectangle;
-  private buildCompleteCallback: (() => void) | null = null;
+  private buildCompleteCallback: ((struct: PlacedStructure) => void) | null = null;
 
   // 철거 상태
   private demolishTarget: PlacedStructure | null = null;
@@ -88,7 +88,8 @@ export class BuildSystem {
   private demolishInventory: Inventory | null = null;
   private demolishProgressBg!: Phaser.GameObjects.Rectangle;
   private demolishProgressFill!: Phaser.GameObjects.Rectangle;
-  private onDemolishComplete: (() => void) | null = null;
+  private onDemolishComplete: ((info: { defName: string; material: StructMaterial; tileX: number; tileY: number; firebaseId?: string }) => void) | null = null;
+  private firebaseIds = new Map<string, string>(); // tileKey → Firebase ID
 
   private nextPendingId = 0;
 
@@ -101,8 +102,29 @@ export class BuildSystem {
     this.queueLines = scene.add.graphics().setDepth(2002);
   }
 
-  setBuildCompleteCallback(cb: () => void): void { this.buildCompleteCallback = cb; }
-  setDemolishCompleteCallback(cb: () => void): void { this.onDemolishComplete = cb; }
+  setBuildCompleteCallback(cb: (struct: PlacedStructure) => void): void { this.buildCompleteCallback = cb; }
+  setDemolishCompleteCallback(cb: (info: { defName: string; material: StructMaterial; tileX: number; tileY: number; firebaseId?: string }) => void): void { this.onDemolishComplete = cb; }
+
+  setFirebaseId(tileX: number, tileY: number, id: string): void { this.firebaseIds.set(this.tileKey(tileX, tileY), id); }
+  getFirebaseId(tileX: number, tileY: number): string | undefined { return this.firebaseIds.get(this.tileKey(tileX, tileY)); }
+  clearFirebaseId(tileX: number, tileY: number): void { this.firebaseIds.delete(this.tileKey(tileX, tileY)); }
+
+  addRemote(entry: { type: string; tileX: number; tileY: number; durability: number; material: 'wood' | 'stone'; id: string }): void {
+    if (this.structures.has(this.tileKey(entry.tileX, entry.tileY))) return;
+    this.forceRestoreStructure(entry.type, entry.material, entry.tileX, entry.tileY, entry.durability);
+    this.firebaseIds.set(this.tileKey(entry.tileX, entry.tileY), entry.id);
+  }
+
+  removeRemote(firebaseId: string): void {
+    for (const [key, fbId] of this.firebaseIds) {
+      if (fbId === firebaseId) {
+        const parts = key.split(',');
+        this.removeStructureAt(parseInt(parts[0]), parseInt(parts[1]));
+        this.firebaseIds.delete(key);
+        return;
+      }
+    }
+  }
 
   tileKey(tx: number, ty: number): string { return `${tx},${ty}`; }
 
@@ -243,6 +265,12 @@ export class BuildSystem {
       this.demolishInventory.add(itemKey, Math.ceil(count * returnRatio));
     }
 
+    const demolishedInfo = {
+      defName: struct.defName, material: struct.material,
+      tileX: struct.tileX, tileY: struct.tileY,
+      firebaseId: this.firebaseIds.get(struct.id),
+    };
+    this.firebaseIds.delete(struct.id);
     struct.sprite.destroy();
     this.structures.delete(struct.id);
 
@@ -251,7 +279,7 @@ export class BuildSystem {
     this.demolishProgressMs = 0;
     this.demolishProgressBg.setVisible(false);
     this.demolishProgressFill.setVisible(false);
-    this.onDemolishComplete?.();
+    this.onDemolishComplete?.(demolishedInfo);
   }
 
   // ── 대기 중인 건축 (큐 시각화) ────────────────────────────
@@ -364,17 +392,15 @@ export class BuildSystem {
     const sprite = this.scene.add.sprite(wx, wy, `struct_${defName}_${material}`).setDepth(1);
     const id = this.tileKey(tileX, tileY);
 
-    this.structures.set(id, {
-      id, defName, material, tileX, tileY,
-      durability: maxDur, maxDurability: maxDur, sprite,
-    });
+    const placed: PlacedStructure = { id, defName, material, tileX, tileY, durability: maxDur, maxDurability: maxDur, sprite };
+    this.structures.set(id, placed);
 
     void survival; // action recovery handled by GameScene buildCompleteCallback
     this.buildTarget = null;
     this.buildProgressMs = 0;
     this.buildProgressBg.setVisible(false);
     this.buildProgressFill.setVisible(false);
-    this.buildCompleteCallback?.();
+    this.buildCompleteCallback?.(placed);
   }
 
   // ── Preview sprite ────────────────────────────────────────
@@ -419,6 +445,7 @@ export class BuildSystem {
   clearAll(): void {
     this.structures.forEach(s => s.sprite.destroy());
     this.structures.clear();
+    this.firebaseIds.clear();
     this.partialBuilds.forEach(p => p.ghost.destroy());
     this.partialBuilds.clear();
     this.pendingBuilds.forEach(p => p.ghost.destroy());
