@@ -68,6 +68,8 @@ export class LightSystem {
     camera: Phaser.Cameras.Scene2D.Camera,
     time: number,
     isIndoor: boolean,
+    weatherLightRadius = 1.0,
+    weatherTorchDuration = 1.0,
   ): void {
     this.darknessAlpha = isIndoor ? 0 : getDarknessAlpha(gameHour);
 
@@ -81,8 +83,8 @@ export class LightSystem {
       torchLight.x = playerX;
       torchLight.y = playerY;
 
-      // Countdown
-      this.torchRemainingMs -= delta;
+      // Countdown (weather torchDuration < 1 → faster drain)
+      this.torchRemainingMs -= delta * (weatherTorchDuration > 0 ? 1 / weatherTorchDuration : 1);
       if (!this.torchWarnedOnce && this.torchRemainingMs <= TORCH_WARN_MS) {
         this.torchWarnedOnce = true;
         this.onTorchWarning?.();
@@ -94,9 +96,15 @@ export class LightSystem {
       }
     }
 
+    // Apply weather light radius multiplier to a copy of lights
+    const lightsWithWeather = [...this.lights.values()].map(l => ({
+      ...l,
+      radius: l.radius * (isIndoor ? 1.0 : weatherLightRadius),
+    }));
+
     this.darknessLayer.update(
       this.darknessAlpha,
-      [...this.lights.values()],
+      lightsWithWeather,
       camera,
       time,
     );

@@ -23,10 +23,15 @@ const HEIGHT_MAP_CACHE_MAX = 9;
 export class MapGenerator {
   private noise: NoiseFunction2D;
   private heightMapCache = new Map<string, number[][]>();
+  private treeDensity = 0.20; // 계절별 설정 가능
 
   constructor(private seed: string) {
     // simplex-noise v4는 noise 함수에 prng를 넣어 seed 지원
     this.noise = createNoise2D(seedrandom(seed));
+  }
+
+  setTreeDensity(density: number): void {
+    this.treeDensity = density;
   }
 
   generateMap(mapX: number, mapY: number): MapData {
@@ -194,7 +199,7 @@ export class MapGenerator {
     }
 
     for (const [cx, cy] of candidates) {
-      if (rng.next() > 0.20) continue; // 약 20% 밀도
+      if (rng.next() > this.treeDensity) continue; // 계절별 밀도
 
       const tooClose = placed.some(([px, py]) =>
         Math.abs(px - cx) < minDist && Math.abs(py - cy) < minDist

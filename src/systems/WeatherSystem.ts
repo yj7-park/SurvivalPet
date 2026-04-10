@@ -1,24 +1,12 @@
 import Phaser from 'phaser';
 import { GameTime, Season } from './GameTime';
+import { WeatherEffectSystem, SEASON_FISH_BONUS, SEASON_INVASION_MULT } from './WeatherEffectSystem';
 
 export type WeatherType = 'clear' | 'cloudy' | 'rain' | 'fog' | 'leaves' | 'snow' | 'storm' | 'blizzard';
 
-interface WeatherConfig {
-  icon: string;
-  speedMod: number;      // 이동속도 배수 (1.0 = 기준)
-  fisherBonus: number;   // 낚시 성공률 보정 (0.1 = +10%)
-  hungerMod: number;     // 허기 감소 속도 배수
-}
-
-const WEATHER_CONFIGS: Record<WeatherType, WeatherConfig> = {
-  clear:     { icon: '☀', speedMod: 1.0, fisherBonus: 0, hungerMod: 1.0 },
-  cloudy:    { icon: '☁', speedMod: 1.0, fisherBonus: 0, hungerMod: 1.0 },
-  rain:      { icon: '🌧', speedMod: 0.9, fisherBonus: 0.1, hungerMod: 1.0 },
-  fog:       { icon: '🌫', speedMod: 1.0, fisherBonus: 0, hungerMod: 1.0 },
-  leaves:    { icon: '🍂', speedMod: 1.0, fisherBonus: 0, hungerMod: 1.0 },
-  snow:      { icon: '❄', speedMod: 0.85, fisherBonus: 0, hungerMod: 1.2 },
-  storm:     { icon: '⛈', speedMod: 0.8, fisherBonus: 0, hungerMod: 1.0 },
-  blizzard:  { icon: '🌨', speedMod: 0.6, fisherBonus: 0, hungerMod: 1.4 },
+const WEATHER_ICONS: Record<WeatherType, string> = {
+  clear: '☀', cloudy: '☁', rain: '🌧', fog: '🌫',
+  leaves: '🍂', snow: '🌨', storm: '⛈', blizzard: '❄',
 };
 
 // 계절별 날씨 확률 (합계 100%)
@@ -43,6 +31,7 @@ function hashNumber(str: string): number {
 export class WeatherSystem {
   private currentWeather: WeatherType = 'clear';
   private lastDay = -1;
+  readonly effectSystem = new WeatherEffectSystem();
 
   constructor(
     private scene: Phaser.Scene,
@@ -72,32 +61,26 @@ export class WeatherSystem {
 
     this.currentWeather = selected;
     this.lastDay = day;
+    this.effectSystem.onWeatherChanged(selected, season);
   }
 
-  getWeather(): WeatherType {
-    return this.currentWeather;
-  }
+  getWeather(): WeatherType { return this.currentWeather; }
+  getWeatherIcon(): string { return WEATHER_ICONS[this.currentWeather]; }
 
-  getWeatherIcon(): string {
-    return WEATHER_CONFIGS[this.currentWeather].icon;
-  }
-
-  getSpeedModifier(): number {
-    return WEATHER_CONFIGS[this.currentWeather].speedMod;
-  }
-
-  getHungerModifier(): number {
-    return WEATHER_CONFIGS[this.currentWeather].hungerMod;
-  }
-
+  /** 낚시 성공률 보정 (날씨 + 계절) */
   getFisherBonus(): number {
-    return WEATHER_CONFIGS[this.currentWeather].fisherBonus;
+    return SEASON_FISH_BONUS[this.gameTime.season] ?? 0;
+  }
+
+  /** 계절별 침략 빈도 배율 */
+  getInvasionFrequencyMultiplier(): number {
+    return SEASON_INVASION_MULT[this.gameTime.season] ?? 1.0;
   }
 
   update(delta: number): void {
-    // 하루 변경 감지 시 날씨 업데이트
     if (this.gameTime.day !== this.lastDay) {
       this.updateWeatherForDay();
     }
+    this.effectSystem.update(delta);
   }
 }

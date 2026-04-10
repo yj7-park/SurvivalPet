@@ -18,6 +18,7 @@ type GameSceneRef = {
   sitSystem: import('../systems/SitSystem').SitSystem;
   tutorialSystem: import('../systems/TutorialSystem').TutorialSystem;
   lightSystem: import('../systems/LightSystem').LightSystem;
+  playerIsIndoor: boolean;
   isMultiplayer: boolean;
   seed: string;
   mapX: number;
@@ -47,6 +48,7 @@ export class UIScene extends Phaser.Scene {
   private hudPlayerCount!: Phaser.GameObjects.Text;
   private hudPoisonIcon!: Phaser.GameObjects.Text;
   private hudSitStatus!: Phaser.GameObjects.Text;
+  private hudWeatherTooltip!: Phaser.GameObjects.Text;
   private prevFrenzy = false;
 
   constructor() { super({ key: 'UIScene' }); }
@@ -73,6 +75,17 @@ export class UIScene extends Phaser.Scene {
       fontSize: '10px', color: '#aaaaaa', fontFamily: 'monospace',
       backgroundColor: '#00000088', padding: { x: 5, y: 2 },
     }).setDepth(100);
+
+    // 날씨 툴팁 (hudTimeText 호버 시 표시)
+    this.hudWeatherTooltip = this.add.text(8, 52, '', {
+      fontSize: '10px', color: '#aaddff', fontFamily: 'monospace',
+      backgroundColor: '#000000bb', padding: { x: 5, y: 3 },
+      wordWrap: { width: 220 },
+    }).setDepth(101).setVisible(false);
+
+    this.hudTimeText.setInteractive({ useHandCursor: false });
+    this.hudTimeText.on('pointerover', () => { this.hudWeatherTooltip.setVisible(true); });
+    this.hudTimeText.on('pointerout',  () => { this.hudWeatherTooltip.setVisible(false); });
 
     // ── 우상단: 스탯 바 ──────────────────────────────────────
     const BAR_W = 90, BAR_H = 7;
@@ -189,6 +202,15 @@ export class UIScene extends Phaser.Scene {
     const weatherIcon = gs.weather.getWeatherIcon();
     this.hudTimeText.setText(`${gs.gameTime.toString()}  ${weatherIcon}`);
     this.hudInfoText.setText(`Seed: ${gs.seed}   Map (${gs.mapX},${gs.mapY})`);
+
+    // 날씨 툴팁 업데이트
+    const isIndoor = gs.playerIsIndoor ?? false;
+    const tooltip = gs.weather.effectSystem.getTooltip(isIndoor);
+    if (tooltip) {
+      this.hudWeatherTooltip.setText(`${weatherIcon} ${gs.weather.getWeather()}\n${tooltip}`);
+    } else {
+      this.hudWeatherTooltip.setVisible(false);
+    }
 
     // 스탯 바
     this.hudStatBars.hp.fill.setSize(BAR_W * (s.hp / s.maxHp), 7);

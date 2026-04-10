@@ -27,13 +27,13 @@ export class SurvivalStats {
     this.hp = Math.min(this.hp, this.maxHp);
   }
 
-  update(delta: number) {
+  update(delta: number, weatherHungerMult = 1.0, weatherFatigueMult = 1.0) {
     const realSec = delta / 1000;
     const secsPerDay = GameTime.MS_PER_GAME_DAY / 1000;
     const scale = realSec / secsPerDay;
 
-    this.hunger  = Math.max(0, this.hunger  - this.stats.hungerDecayPerDay  * scale);
-    this.fatigue = Math.max(0, this.fatigue - this.stats.fatigueDecayPerDay * scale);
+    this.hunger  = Math.max(0, this.hunger  - this.stats.hungerDecayPerDay  * scale * weatherHungerMult);
+    this.fatigue = Math.max(0, this.fatigue - this.stats.fatigueDecayPerDay * scale * weatherFatigueMult);
     this.action  = Math.max(0, this.action  - 20 * scale);
 
     // Fatigue → forced sleep (SleepSystem handles recovery; isForcedSleep is set externally)

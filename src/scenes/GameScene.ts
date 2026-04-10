@@ -51,6 +51,7 @@ import { ChatSystem } from '../systems/ChatSystem';
 import { ChatLog } from '../ui/ChatLog';
 import { ChatInput } from '../ui/ChatInput';
 import { ChatBubbleManager } from '../ui/ChatBubble';
+import { SEASON_TREE_DENSITY } from '../systems/WeatherEffectSystem';
 
 const MAP_W = 100;
 const MAP_H = 100;
@@ -203,7 +204,7 @@ export class GameScene extends Phaser.Scene {
   // 문 & 실내/실외 시스템
   private doorSystem = new DoorSystem();
   private roofSystem = new RoofSystem();
-  private playerIsIndoor = false;
+  playerIsIndoor = false;
   private lastIndoorTileX = -1;
   private lastIndoorTileY = -1;
   private doorHintText!: Phaser.GameObjects.Text;
@@ -211,6 +212,10 @@ export class GameScene extends Phaser.Scene {
   // 조명 시스템
   lightSystem!: LightSystem;
   private torchWarnedOnce = false;
+
+  // 날씨 효과
+  private lastSeasonForWeather = '';
+  private winterHintShown = false;
 
   // 채팅 시스템 (멀티플레이 전용)
   private chatSystem = new ChatSystem();
@@ -1029,7 +1034,10 @@ export class GameScene extends Phaser.Scene {
     // 수면 시스템: 시간 가속 및 피로 회복
     const effectiveDelta = this.sleepSystem.update(delta, this.survival, this.gameTime);
     this.gameTime.update(effectiveDelta);
-    this.survival.update(effectiveDelta);
+    {
+      const wm = this.weather.effectSystem.getMultipliers(this.playerIsIndoor);
+      this.survival.update(effectiveDelta, wm.hungerDecay, wm.fatigueDecay);
+    }
     this.hungerSystem.update(effectiveDelta, this.survival, this.charStats);
     this.hpSystem.update(effectiveDelta, this.survival, this.charStats, this.hungerSystem);
 
@@ -1306,7 +1314,8 @@ export class GameScene extends Phaser.Scene {
       || this.sleepSystem.isSleeping()
       || this.chatSystem.isInputActive();
 
-    this.player.update(delta, suppressKeys, this.survival.fatigueSpeedMult * this.survival.hungerSpeedMult);
+    const weatherSpeedMult = this.weather.effectSystem.getMultipliers(this.playerIsIndoor).moveSpeed;
+    this.player.update(delta, suppressKeys, this.survival.fatigueSpeedMult * this.survival.hungerSpeedMult * weatherSpeedMult);
     this.interaction.update(delta);
 
     // ── 실내/실외 상태 갱신 (타일 변화 시에만) ───────────────
@@ -1382,6 +1391,18 @@ export class GameScene extends Phaser.Scene {
     this.mapTransition.check(this.player.sprite.x, this.player.sprite.y, this.mapX, this.mapY);
     this.miniMap.update(delta);
 
+    // 날씨 효과 적용 (이동속도·계절 나무밀도·겨울 힌트)
+    const wxm = this.weather.effectSystem.getMultipliers(this.playerIsIndoor);
+    const season = this.gameTime.season;
+    if (season !== this.lastSeasonForWeather) {
+      this.lastSeasonForWeather = season;
+      this.mapGenerator.setTreeDensity(SEASON_TREE_DENSITY[season] ?? 0.20);
+      if (season === 'winter' && !this.winterHintShown) {
+        this.winterHintShown = true;
+        this.showNotificationPopup('❄ 겨울이 왔습니다. 충분한 음식과 실내 공간을 확보하세요.', '#aaddff');
+      }
+    }
+
     // 조명 시스템 업데이트
     const gameHour = this.gameTime.hour + this.gameTime.minute / 60;
     this.lightSystem?.update(
@@ -1389,6 +1410,8 @@ export class GameScene extends Phaser.Scene {
       this.player.sprite.x, this.player.sprite.y,
       this.cameras.main, time,
       this.playerIsIndoor,
+      wxm.lightRadius,
+      wxm.torchDuration,
     );
     if (this.isMultiplayer) {
       const isMoving = this.player.isMovingByKeyboard() || this.combat.tracking;
